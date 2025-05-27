@@ -1,3 +1,4 @@
+# bash eval.sh block_hammer_beat D435 100 300 0 0
 DEBUG=False
 
 task_name=${1}

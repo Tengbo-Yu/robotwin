@@ -1,3 +1,4 @@
+# ./eval.sh block_hammer_beat D435 pi0_fast_aloha_robotwin_lora hammer 10000 0 5
 DEBUG=False
 
 task_name=${1}

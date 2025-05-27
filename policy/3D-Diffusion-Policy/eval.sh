@@ -1,5 +1,5 @@
 # bash eval.sh mug_hanging 10 3000 0 0
-
+# ./eval.sh block_hammer_beat D435 100 5000 0 2
 
 task_name=${1}
 head_camera_type=${2}
