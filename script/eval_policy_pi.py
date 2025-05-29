@@ -134,7 +134,6 @@ def test_policy(Demo_class, args, policy, st_seed, test_num=20):
     while succ_seed < test_num:
         render_freq = args['render_freq']
         args['render_freq'] = 0
-        
         if expert_check:
             try:
                 Demo_class.setup_demo(now_ep_num=now_id, seed = now_seed, is_test = True, ** args)
@@ -150,6 +149,7 @@ def test_policy(Demo_class, args, policy, st_seed, test_num=20):
                 args['render_freq'] = render_freq
                 print('error occurs !')
                 continue
+
 
         if (not expert_check) or ( Demo_class.plan_success and Demo_class.check_success() ):
             succ_seed +=1
