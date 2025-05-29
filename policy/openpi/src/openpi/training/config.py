@@ -390,7 +390,7 @@ _CONFIGS = [
         name="pi0_base_aloha_robotwin_lora",
         model=pi0.Pi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
         data=LeRobotAlohaDataConfig(
-            repo_id="handover",# your datasets repo_id
+            repo_id="hammer",# your datasets repo_id
             adapt_to_pi = False,
             repack_transforms=_transforms.Group(
                 inputs=[
