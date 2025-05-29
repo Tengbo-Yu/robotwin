@@ -1,0 +1,5 @@
+apple_cabinet_storage
+diverse_bottles_pick
+dual_bottles_pick_easy
+dual_bottles_pick_hard
+dual_shoes_place

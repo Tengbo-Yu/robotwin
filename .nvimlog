@@ -1,0 +1,1 @@
+WARN  2025-05-29T15:50:02.660 3135077 log_path_init:95: Failed to create directory /mnt/data for writing logs: Unknown system error 1
