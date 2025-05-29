@@ -426,7 +426,7 @@ _CONFIGS = [
         name="pi0_fast_aloha_robotwin_lora",
         model=pi0_fast.Pi0FASTConfig(paligemma_variant="gemma_2b_lora"),
         data=LeRobotAlohaDataConfig(
-            repo_id="hammer",# your datasets repo_id
+            repo_id="handover",# your datasets repo_id
             adapt_to_pi = False,
             repack_transforms=_transforms.Group(
                 inputs=[

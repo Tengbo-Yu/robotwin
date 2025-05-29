@@ -1,1 +1,0 @@
-CUDA_VISIBLE_DEVICES=3,4,5,6 uv run scripts/compute_norm_stats.py  --config-name pi0_fast_aloha_robotwin_lora
