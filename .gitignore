@@ -23,3 +23,5 @@ eval_result/
 policy/weights/*
 !policy/weights/README.md
 misc/
+result_dp3/
+result_pi0/
