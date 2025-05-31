@@ -1,16 +1,26 @@
 #!/bin/bash
 
 # 批量评估脚本
-# 使用方法: ./batch_eval.sh [gpu_id]
-# 示例: ./batch_eval.sh 0
+# 使用方法: ./batch_eval.sh [gpu_id] [delay_hours]
+# 示例: ./batch_eval.sh 0      # 立即在GPU 0上运行
+# 示例: ./batch_eval.sh 0 2    # 在2小时后在GPU 0上运行
 
 # 设置默认GPU ID
 gpu_id=${1:-0}
+# 设置延迟时间（小时）
+delay_hours=${2:-0}
+
+# 如果指定了延迟时间，则等待
+if [ $delay_hours -gt 0 ]; then
+    echo "将在 $delay_hours 小时后开始评估..."
+    delay_seconds=$((delay_hours * 3600))
+    sleep $delay_seconds
+fi
 
 # 公共参数配置
 head_camera_type="D435"
 train_config_name="pi0_base_aloha_robotwin_lora"
-checkpoint_num="10000"
+checkpoint_num="25000"
 seed="0"
 
 # 定义要评估的任务列表
