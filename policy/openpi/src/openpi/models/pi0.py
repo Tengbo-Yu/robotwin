@@ -71,7 +71,7 @@ class Pi0Config(_model.BaseModelConfig):
     action_expert_variant: _gemma.Variant = "gemma_300m"
 
     # Set the model specific defaults.
-    action_dim: int = 32
+    action_dim: int = 14
     action_horizon: int = 50
     max_token_len: int = 48
 
