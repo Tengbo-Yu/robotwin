@@ -337,7 +337,7 @@ class TrainConfig:
     # How often (in steps) to log training metrics.
     log_interval: int = 100
     # How often (in steps) to save checkpoints.
-    save_interval: int = 10
+    save_interval: int = 1000
     # If set, any existing checkpoints matching step % keep_period == 0 will not be deleted.
     keep_period: int | None = 5000
 
@@ -418,6 +418,10 @@ _CONFIGS = [
         ).get_freeze_filter(),
         batch_size=32, # the total batch_size not pre_gpu batch_size
         weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
+        # weight_loader=weight_loaders.ActionDimAdaptiveWeightLoader(
+        #     "s3://openpi-assets/checkpoints/pi0_base/params", 
+        #     resize_strategy="truncate"  # 截断多余的维度，从32维截断到14维
+        # ),
         num_train_steps=30000,
         fsdp_devices=1, # refer line 359
     ),

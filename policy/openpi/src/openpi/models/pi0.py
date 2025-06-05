@@ -165,6 +165,7 @@ class Pi0(_model.BaseModel):
         )
         img.lazy_init(next(iter(config.fake_obs().images.values())), train=False, rngs=rngs)
         self.PaliGemma = nnx.Dict(llm=llm, img=img)
+        # 动作投影
         self.state_proj = nnx.Linear(config.action_dim, action_expert_config.width, rngs=rngs)
         self.action_in_proj = nnx.Linear(config.action_dim, action_expert_config.width, rngs=rngs)
         self.action_time_mlp_in = nnx.Linear(2 * action_expert_config.width, action_expert_config.width, rngs=rngs)
@@ -172,7 +173,7 @@ class Pi0(_model.BaseModel):
         self.action_out_proj = nnx.Linear(action_expert_config.width, config.action_dim, rngs=rngs)
 
     @at.typecheck
-    def embed_prefix(
+    def embed_prefix( # prefix 包含img instruction
         self, obs: _model.Observation
     ) -> tuple[at.Float[at.Array, "b s emb"], at.Bool[at.Array, "b s"], at.Bool[at.Array, " s"]]:
         input_mask = []
@@ -206,7 +207,7 @@ class Pi0(_model.BaseModel):
         return tokens, input_mask, ar_mask
 
     @at.typecheck
-    def embed_suffix(
+    def embed_suffix( # suffix 包含state， noisy action，timestep
         self, obs: _model.Observation, noisy_actions: _model.Actions, timestep: at.Float[at.Array, " b"]
     ) -> tuple[at.Float[at.Array, "b s emb"], at.Bool[at.Array, "b s"], at.Bool[at.Array, " s"]]:
         input_mask = []
@@ -245,11 +246,18 @@ class Pi0(_model.BaseModel):
         observation = _model.preprocess_observation(preprocess_rng, observation, train=train)
 
         batch_shape = actions.shape[:-2]
-        noise = jax.random.normal(noise_rng, actions.shape)
+        noise = jax.random.normal(noise_rng, actions.shape) # 生成随机噪声
         time = jax.random.beta(time_rng, 1.5, 1, batch_shape) * 0.999 + 0.001
         time_expanded = time[..., None, None]
-        x_t = time_expanded * noise + (1 - time_expanded) * actions
-        u_t = noise - actions
+        x_t = time_expanded * noise + (1 - time_expanded) * actions # 对真实动作添加噪声
+        u_t = noise - actions # 噪声减去真实动作
+
+        print("----------------------------",actions.shape) # [32, 50, 32] batch_size=32, action_horizon=50, action_dim=32
+        # 只有前14维有值，后面均为0，因为训练时padding的就是0
+        # 使用jax.debug.print，它可以在jit编译的函数内部打印值
+        jax.debug.print("具体动作值: {x}", x=actions[0,0])
+        jax.debug.print("动作形状: {shape}", shape=actions.shape)
+        jax.debug.print("第一个动作的第一个元素: {val}", val=actions[0,0,0])
 
         # one big forward pass of prefix + suffix at once
         prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)

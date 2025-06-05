@@ -46,6 +46,7 @@ class AlohaInputs(transforms.DataTransformFn):
         data = _decode_aloha(data, adapt_to_pi=self.adapt_to_pi)
 
         # Get the state. We are padding from 14 to the model action dim.
+        # 将输入的14维state padding到action_dim维（32维）
         state = transforms.pad_to_dim(data["state"], self.action_dim)
 
         in_images = data["images"]
