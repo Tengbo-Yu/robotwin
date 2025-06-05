@@ -1,3 +1,5 @@
+# ./finetune.sh pi0_base_aloha_robotwin_lora dual_tasks_0529 5
+
 train_config_name=$1
 model_name=$2
 gpu_use=$3

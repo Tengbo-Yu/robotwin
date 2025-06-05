@@ -71,9 +71,12 @@ class Pi0Config(_model.BaseModelConfig):
     action_expert_variant: _gemma.Variant = "gemma_300m"
 
     # Set the model specific defaults.
-    action_dim: int = 32
+    action_dim: int = 14
     action_horizon: int = 50
     max_token_len: int = 48
+    
+    # 新增：是否对双臂分别进行降噪处理
+    dual_arm_separate_denoise: bool = False
 
     @property
     @override
@@ -113,9 +116,10 @@ class Pi0Config(_model.BaseModelConfig):
         """Returns the freeze filter based on the model config."""
         filters = []
         has_lora = False
+        # 匹配所有LLM参数的正则表达式
         gemma_params_filter = nnx_utils.PathRegex(".*llm.*")
         action_expert_params_filter = nnx_utils.PathRegex(".*llm.*_1.*")
-        if "lora" in self.paligemma_variant:
+        if "lora" in self.paligemma_variant: # 如果lora，冻结所有和llm有关的参数，同时微调VLM和动作专家的参数
             filters.append(
                 gemma_params_filter,
             )
@@ -171,6 +175,18 @@ class Pi0(_model.BaseModel):
         self.action_time_mlp_in = nnx.Linear(2 * action_expert_config.width, action_expert_config.width, rngs=rngs)
         self.action_time_mlp_out = nnx.Linear(action_expert_config.width, action_expert_config.width, rngs=rngs)
         self.action_out_proj = nnx.Linear(action_expert_config.width, config.action_dim, rngs=rngs)
+        
+        # 存储配置以便在其他方法中使用
+        self.config = config
+        
+        # 如果启用双臂分别降噪，添加额外的投影层
+        if config.dual_arm_separate_denoise:
+            # 假设action_dim=14，每个手臂7维
+            single_arm_dim = config.action_dim // 2
+            self.left_arm_in_proj = nnx.Linear(single_arm_dim, action_expert_config.width, rngs=rngs)
+            self.left_arm_out_proj = nnx.Linear(action_expert_config.width, single_arm_dim, rngs=rngs)
+            self.right_arm_in_proj = nnx.Linear(single_arm_dim, action_expert_config.width, rngs=rngs)
+            self.right_arm_out_proj = nnx.Linear(action_expert_config.width, single_arm_dim, rngs=rngs)
 
     @at.typecheck
     def embed_prefix( # prefix 包含img instruction
@@ -222,17 +238,55 @@ class Pi0(_model.BaseModel):
 
         # embed timestep using sine-cosine positional encoding with sensitivity in the range [0, 1]
         time_emb = posemb_sincos(timestep, self.action_in_proj.out_features, min_period=4e-3, max_period=4.0)
-        # mix timestep + action information using an MLP
-        action_tokens = self.action_in_proj(noisy_actions)
-        time_tokens = einops.repeat(time_emb, "b emb -> b s emb", s=self.action_horizon)
-        action_time_tokens = jnp.concatenate([action_tokens, time_tokens], axis=-1)
-        action_time_tokens = self.action_time_mlp_in(action_time_tokens)
-        action_time_tokens = nnx.swish(action_time_tokens)
-        action_time_tokens = self.action_time_mlp_out(action_time_tokens)
-        tokens.append(action_time_tokens)
-        input_mask.append(jnp.ones(action_time_tokens.shape[:2], dtype=jnp.bool_))
-        # image/language/state inputs do not attend to action tokens
-        ar_mask += [True] + ([False] * (self.action_horizon - 1))
+        
+        # 根据配置选择处理方式
+        if self.config.dual_arm_separate_denoise:
+            # 双臂分别处理模式
+            single_arm_dim = self.config.action_dim // 2
+            # 分离左臂和右臂动作
+            left_arm_actions = noisy_actions[..., :single_arm_dim]  # 前7维
+            right_arm_actions = noisy_actions[..., single_arm_dim:]  # 后7维
+            
+            # 分别投影左臂和右臂动作
+            left_arm_tokens = self.left_arm_in_proj(left_arm_actions)
+            right_arm_tokens = self.right_arm_in_proj(right_arm_actions)
+            
+            # mix timestep + action information using an MLP for each arm
+            time_tokens_left = einops.repeat(time_emb, "b emb -> b s emb", s=self.action_horizon)
+            time_tokens_right = einops.repeat(time_emb, "b emb -> b s emb", s=self.action_horizon)
+            
+            left_arm_time_tokens = jnp.concatenate([left_arm_tokens, time_tokens_left], axis=-1)
+            left_arm_time_tokens = self.action_time_mlp_in(left_arm_time_tokens)
+            left_arm_time_tokens = nnx.swish(left_arm_time_tokens)
+            left_arm_time_tokens = self.action_time_mlp_out(left_arm_time_tokens)
+            
+            right_arm_time_tokens = jnp.concatenate([right_arm_tokens, time_tokens_right], axis=-1)
+            right_arm_time_tokens = self.action_time_mlp_in(right_arm_time_tokens)
+            right_arm_time_tokens = nnx.swish(right_arm_time_tokens)
+            right_arm_time_tokens = self.action_time_mlp_out(right_arm_time_tokens)
+            
+            # 将左臂和右臂tokens按顺序添加
+            tokens.append(left_arm_time_tokens)
+            tokens.append(right_arm_time_tokens)
+            input_mask.append(jnp.ones(left_arm_time_tokens.shape[:2], dtype=jnp.bool_))
+            input_mask.append(jnp.ones(right_arm_time_tokens.shape[:2], dtype=jnp.bool_))
+            # image/language/state inputs do not attend to action tokens
+            ar_mask += [True] + ([False] * (self.action_horizon - 1))  # 左臂
+            ar_mask += [True] + ([False] * (self.action_horizon - 1))  # 右臂
+        else:
+            # 原始的整体处理模式
+            # mix timestep + action information using an MLP
+            action_tokens = self.action_in_proj(noisy_actions)
+            time_tokens = einops.repeat(time_emb, "b emb -> b s emb", s=self.action_horizon)
+            action_time_tokens = jnp.concatenate([action_tokens, time_tokens], axis=-1)
+            action_time_tokens = self.action_time_mlp_in(action_time_tokens)
+            action_time_tokens = nnx.swish(action_time_tokens)
+            action_time_tokens = self.action_time_mlp_out(action_time_tokens)
+            tokens.append(action_time_tokens)
+            input_mask.append(jnp.ones(action_time_tokens.shape[:2], dtype=jnp.bool_))
+            # image/language/state inputs do not attend to action tokens
+            ar_mask += [True] + ([False] * (self.action_horizon - 1))
+            
         tokens = jnp.concatenate(tokens, axis=1)
         input_mask = jnp.concatenate(input_mask, axis=1)
         ar_mask = jnp.array(ar_mask)
@@ -269,7 +323,30 @@ class Pi0(_model.BaseModel):
         (prefix_out, suffix_out), _ = self.PaliGemma.llm(
             [prefix_tokens, suffix_tokens], mask=attn_mask, positions=positions
         )
-        v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
+        
+        # 根据配置选择输出处理方式
+        if self.config.dual_arm_separate_denoise:
+            # 双臂分别处理模式
+            single_arm_dim = self.config.action_dim // 2
+            # suffix_out包含: [state_token, left_arm_tokens, right_arm_tokens]
+            # 提取左臂和右臂的输出（跳过state_token）
+            left_arm_start = 1  # 跳过state token
+            left_arm_end = left_arm_start + self.action_horizon
+            right_arm_start = left_arm_end
+            right_arm_end = right_arm_start + self.action_horizon
+            
+            left_arm_out = suffix_out[:, left_arm_start:left_arm_end]
+            right_arm_out = suffix_out[:, right_arm_start:right_arm_end]
+            
+            # 分别投影左臂和右臂的输出
+            left_arm_v_t = self.left_arm_out_proj(left_arm_out)
+            right_arm_v_t = self.right_arm_out_proj(right_arm_out)
+            
+            # 合并左臂和右臂的预测
+            v_t = jnp.concatenate([left_arm_v_t, right_arm_v_t], axis=-1)
+        else:
+            # 原始的整体处理模式
+            v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
 
         return jnp.mean(jnp.square(v_t - u_t), axis=-1)
 
@@ -320,7 +397,30 @@ class Pi0(_model.BaseModel):
                 [None, suffix_tokens], mask=full_attn_mask, positions=positions, kv_cache=kv_cache
             )
             assert prefix_out is None
-            v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
+            
+            # 根据配置选择输出处理方式
+            if self.config.dual_arm_separate_denoise:
+                # 双臂分别处理模式
+                single_arm_dim = self.config.action_dim // 2
+                # suffix_out包含: [state_token, left_arm_tokens, right_arm_tokens]
+                # 提取左臂和右臂的输出（跳过state_token）
+                left_arm_start = 1  # 跳过state token
+                left_arm_end = left_arm_start + self.action_horizon
+                right_arm_start = left_arm_end
+                right_arm_end = right_arm_start + self.action_horizon
+                
+                left_arm_out = suffix_out[:, left_arm_start:left_arm_end]
+                right_arm_out = suffix_out[:, right_arm_start:right_arm_end]
+                
+                # 分别投影左臂和右臂的输出
+                left_arm_v_t = self.left_arm_out_proj(left_arm_out)
+                right_arm_v_t = self.right_arm_out_proj(right_arm_out)
+                
+                # 合并左臂和右臂的预测
+                v_t = jnp.concatenate([left_arm_v_t, right_arm_v_t], axis=-1)
+            else:
+                # 原始的整体处理模式
+                v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
 
             return x_t + dt * v_t, time + dt
 

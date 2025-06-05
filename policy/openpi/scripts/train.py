@@ -146,6 +146,7 @@ def train_step(
     def loss_fn(
         model: _model.BaseModel, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions
     ):
+        # train_step中的loss是compute_loss的返回值的均值（一个标量），compute_loss的返回值是v_t - u_t的平方
         chunked_loss = model.compute_loss(rng, observation, actions, train=True)
         return jnp.mean(chunked_loss)
 

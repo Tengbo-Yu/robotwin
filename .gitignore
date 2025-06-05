@@ -24,3 +24,4 @@ checkpoints/*
 assets/*
 policy/weights/*
 !policy/weights/README.md
+result_pi0/
