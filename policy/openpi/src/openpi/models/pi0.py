@@ -176,6 +176,7 @@ class Pi0(_model.BaseModel):
         self.action_time_mlp_out = nnx.Linear(action_expert_config.width, action_expert_config.width, rngs=rngs)
         self.action_out_proj = nnx.Linear(action_expert_config.width, config.action_dim, rngs=rngs)
         
+        # ----------------update----------------
         # 存储配置以便在其他方法中使用
         self.config = config
         
@@ -187,6 +188,8 @@ class Pi0(_model.BaseModel):
             self.left_arm_out_proj = nnx.Linear(action_expert_config.width, single_arm_dim, rngs=rngs)
             self.right_arm_in_proj = nnx.Linear(single_arm_dim, action_expert_config.width, rngs=rngs)
             self.right_arm_out_proj = nnx.Linear(action_expert_config.width, single_arm_dim, rngs=rngs)
+        
+        # ----------------update----------------
 
     @at.typecheck
     def embed_prefix( # prefix 包含img instruction
@@ -239,6 +242,7 @@ class Pi0(_model.BaseModel):
         # embed timestep using sine-cosine positional encoding with sensitivity in the range [0, 1]
         time_emb = posemb_sincos(timestep, self.action_in_proj.out_features, min_period=4e-3, max_period=4.0)
         
+        # ----------------update----------------
         # 根据配置选择处理方式
         if self.config.dual_arm_separate_denoise:
             # 双臂分别处理模式
@@ -273,6 +277,7 @@ class Pi0(_model.BaseModel):
             # image/language/state inputs do not attend to action tokens
             ar_mask += [True] + ([False] * (self.action_horizon - 1))  # 左臂
             ar_mask += [True] + ([False] * (self.action_horizon - 1))  # 右臂
+        # ----------------update----------------
         else:
             # 原始的整体处理模式
             # mix timestep + action information using an MLP
@@ -306,12 +311,12 @@ class Pi0(_model.BaseModel):
         x_t = time_expanded * noise + (1 - time_expanded) * actions # 对真实动作添加噪声
         u_t = noise - actions # 噪声减去真实动作
 
-        print("----------------------------",actions.shape) # [32, 50, 32] batch_size=32, action_horizon=50, action_dim=32
-        # 只有前14维有值，后面均为0，因为训练时padding的就是0
-        # 使用jax.debug.print，它可以在jit编译的函数内部打印值
-        jax.debug.print("具体动作值: {x}", x=actions[0,0])
-        jax.debug.print("动作形状: {shape}", shape=actions.shape)
-        jax.debug.print("第一个动作的第一个元素: {val}", val=actions[0,0,0])
+        # print("----------------------------",actions.shape) # [32, 50, 32] batch_size=32, action_horizon=50, action_dim=32
+        # # 只有前14维有值，后面均为0，因为训练时padding的就是0
+        # # 使用jax.debug.print，它可以在jit编译的函数内部打印值
+        # jax.debug.print("具体动作值: {x}", x=actions[0,0])
+        # jax.debug.print("动作形状: {shape}", shape=actions.shape)
+        # jax.debug.print("第一个动作的第一个元素: {val}", val=actions[0,0,0])
 
         # one big forward pass of prefix + suffix at once
         prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
@@ -324,6 +329,9 @@ class Pi0(_model.BaseModel):
             [prefix_tokens, suffix_tokens], mask=attn_mask, positions=positions
         )
         
+        # print("--------------------------------")
+        # print(self.config.dual_arm_separate_denoise)
+        # ----------------update----------------
         # 根据配置选择输出处理方式
         if self.config.dual_arm_separate_denoise:
             # 双臂分别处理模式
@@ -344,6 +352,8 @@ class Pi0(_model.BaseModel):
             
             # 合并左臂和右臂的预测
             v_t = jnp.concatenate([left_arm_v_t, right_arm_v_t], axis=-1)
+            
+        # ----------------update----------------
         else:
             # 原始的整体处理模式
             v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
@@ -397,7 +407,10 @@ class Pi0(_model.BaseModel):
                 [None, suffix_tokens], mask=full_attn_mask, positions=positions, kv_cache=kv_cache
             )
             assert prefix_out is None
-            
+
+            # print("--------------------------------")
+            # print(self.config.dual_arm_separate_denoise)
+            # ----------------update----------------
             # 根据配置选择输出处理方式
             if self.config.dual_arm_separate_denoise:
                 # 双臂分别处理模式
@@ -418,6 +431,7 @@ class Pi0(_model.BaseModel):
                 
                 # 合并左臂和右臂的预测
                 v_t = jnp.concatenate([left_arm_v_t, right_arm_v_t], axis=-1)
+            # ----------------update----------------
             else:
                 # 原始的整体处理模式
                 v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])

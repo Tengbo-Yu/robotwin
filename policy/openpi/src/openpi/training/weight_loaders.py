@@ -59,21 +59,76 @@ class ActionDimAdaptiveWeightLoader(WeightLoader):
     
     This loader handles cases where the pretrained model has a different action_dim
     than the current model by appropriately resizing the action projection layers.
+    It also handles the dual_arm_separate_denoise parameter change, allowing loading
+    weights trained with one setting to be used with another.
     """
 
     params_path: str
     # Strategy for handling dimension mismatch: 'truncate', 'pad_zero', 'pad_random'
     resize_strategy: str = "truncate"
+    # Whether the target model uses dual arm separate denoise
+    dual_arm_separate_denoise: bool = False
 
     def load(self, params: at.Params) -> at.Params:
         # Load the original parameters
         loaded_params = _model.restore_params(download.maybe_download(self.params_path), restore_type=np.ndarray)
+        
+        # Check if we need to handle dual_arm structure changes
+        if self.dual_arm_separate_denoise:
+            loaded_params = self._adapt_dual_arm_structure(loaded_params, params)
         
         # Adapt action dimensions if needed
         adapted_params = self._adapt_action_dimensions(loaded_params, params)
         
         # Add all missing LoRA weights and other missing parameters
         return _merge_params(adapted_params, params, missing_regex=".*lora.*")
+    
+    def _adapt_dual_arm_structure(self, loaded_params: at.Params, target_params: at.Params) -> at.Params:
+        """Create dual arm projection layers if needed from existing single-arm projections."""
+        flat_loaded = flax.traverse_util.flatten_dict(loaded_params, sep="/")
+        flat_target = flax.traverse_util.flatten_dict(target_params, sep="/")
+        
+        # Check if we're loading a model without dual arm projections into one with them
+        has_dual_arm_projections = any("left_arm_in_proj" in k for k in flat_target.keys())
+        has_source_projections = "action_in_proj/kernel" in flat_loaded and "action_out_proj/kernel" in flat_loaded
+        
+        if has_dual_arm_projections and has_source_projections:
+            logger.info("Adapting model weights to dual arm separate denoise structure")
+            
+            # Calculate single arm dimension
+            single_arm_dim = target_params["left_arm_out_proj"]["kernel"].shape[1]
+            
+            # Initialize dual arm projections from the corresponding original projections
+            # For the input projections (in_proj)
+            if "action_in_proj/kernel" in flat_loaded:
+                original_in_kernel = flat_loaded["action_in_proj/kernel"]
+                original_in_bias = flat_loaded.get("action_in_proj/bias")
+                
+                # Split the input projection weight for left and right arms
+                flat_loaded["left_arm_in_proj/kernel"] = original_in_kernel[:single_arm_dim, :]
+                flat_loaded["right_arm_in_proj/kernel"] = original_in_kernel[single_arm_dim:2*single_arm_dim, :]
+                
+                # Split the bias if it exists
+                if original_in_bias is not None:
+                    flat_loaded["left_arm_in_proj/bias"] = original_in_bias
+                    flat_loaded["right_arm_in_proj/bias"] = original_in_bias
+            
+            # For the output projections (out_proj)
+            if "action_out_proj/kernel" in flat_loaded:
+                original_out_kernel = flat_loaded["action_out_proj/kernel"]
+                original_out_bias = flat_loaded.get("action_out_proj/bias")
+                
+                # Split the output projection weight for left and right arms
+                hidden_dim = original_out_kernel.shape[0]
+                flat_loaded["left_arm_out_proj/kernel"] = original_out_kernel[:, :single_arm_dim]
+                flat_loaded["right_arm_out_proj/kernel"] = original_out_kernel[:, single_arm_dim:2*single_arm_dim]
+                
+                # Split the bias if it exists
+                if original_out_bias is not None:
+                    flat_loaded["left_arm_out_proj/bias"] = original_out_bias[:single_arm_dim]
+                    flat_loaded["right_arm_out_proj/bias"] = original_out_bias[single_arm_dim:2*single_arm_dim]
+                
+        return flax.traverse_util.unflatten_dict(flat_loaded, sep="/")
     
     def _adapt_action_dimensions(self, loaded_params: at.Params, target_params: at.Params) -> at.Params:
         """Adapt action dimension mismatches in projection layers."""
@@ -87,7 +142,16 @@ class ActionDimAdaptiveWeightLoader(WeightLoader):
             "action_in_proj/bias",
             "action_out_proj/bias",
             "state_proj/kernel",
-            "state_proj/bias"
+            "state_proj/bias",
+            # Add dual arm keys
+            "left_arm_in_proj/kernel",
+            "left_arm_out_proj/kernel",
+            "left_arm_in_proj/bias",
+            "left_arm_out_proj/bias",
+            "right_arm_in_proj/kernel",
+            "right_arm_out_proj/kernel",
+            "right_arm_in_proj/bias",
+            "right_arm_out_proj/bias"
         ]
         
         adapted_flat = flat_loaded.copy()
@@ -107,7 +171,7 @@ class ActionDimAdaptiveWeightLoader(WeightLoader):
     def _resize_weight(self, weight: np.ndarray, target_shape: tuple, key: str) -> np.ndarray:
         """Resize a weight tensor to match target shape."""
         if "kernel" in key:
-            if "action_in_proj" in key:
+            if "action_in_proj" in key or "left_arm_in_proj" in key or "right_arm_in_proj" in key:
                 # action_in_proj: (action_dim, hidden_dim)
                 # Resize the first dimension (action_dim)
                 if self.resize_strategy == "truncate":
@@ -124,7 +188,7 @@ class ActionDimAdaptiveWeightLoader(WeightLoader):
                         padded = np.random.normal(0, 0.02, target_shape).astype(weight.dtype)
                         padded[:weight.shape[0], :] = weight
                         return padded
-            elif "action_out_proj" in key:
+            elif "action_out_proj" in key or "left_arm_out_proj" in key or "right_arm_out_proj" in key:
                 # action_out_proj: (hidden_dim, action_dim)
                 # Resize the second dimension (action_dim)
                 if self.resize_strategy == "truncate":
@@ -158,7 +222,7 @@ class ActionDimAdaptiveWeightLoader(WeightLoader):
                         padded[:weight.shape[0], :] = weight
                         return padded
         elif "bias" in key:
-            if "action_out_proj" in key:
+            if "action_out_proj" in key or "left_arm_out_proj" in key or "right_arm_out_proj" in key:
                 # action_out_proj bias: (action_dim,)
                 if self.resize_strategy == "truncate":
                     return weight[:target_shape[0]]

@@ -388,7 +388,10 @@ _CONFIGS = [
     # pi0_base by lora
     TrainConfig(
         name="pi0_base_aloha_robotwin_lora",
-        model=pi0.Pi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
+        model=pi0.Pi0Config(paligemma_variant="gemma_2b_lora", 
+                            action_expert_variant="gemma_300m_lora",
+                            dual_arm_separate_denoise=True  # 启用双臂分别降噪的权重适配
+                            ),
         data=LeRobotAlohaDataConfig(
             # repo_id="dual_tasks",# your datasets repo_id
             repo_id="dual_tasks_actdim14",# your datasets repo_id
@@ -415,13 +418,15 @@ _CONFIGS = [
             ),
         ),
         freeze_filter=pi0.Pi0Config(
-            paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
+            paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora", 
+            action_dim=14,
         ).get_freeze_filter(),
         batch_size=32, # the total batch_size not pre_gpu batch_size
         # weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
         weight_loader=weight_loaders.ActionDimAdaptiveWeightLoader(
             "s3://openpi-assets/checkpoints/pi0_base/params", 
-            resize_strategy="truncate"  # 截断多余的维度，从32维截断到14维
+            resize_strategy="truncate",  # 截断多余的维度，从32维截断到14维
+            dual_arm_separate_denoise=True  # 启用双臂分别降噪的权重适配
         ),
         num_train_steps=30000,
         fsdp_devices=1, # refer line 359

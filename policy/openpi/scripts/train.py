@@ -248,7 +248,8 @@ def main(config: _config.TrainConfig):
         total=config.num_train_steps,
         dynamic_ncols=True,
     )
-
+    print("\033[91maction_dim: ", config.model.action_dim, "\033[0m")
+    print("\033[91mdual_arm_separate_denoise: ", config.model.dual_arm_separate_denoise, "\033[0m") 
     infos = []
     for step in pbar:
         with sharding.set_mesh(mesh):
