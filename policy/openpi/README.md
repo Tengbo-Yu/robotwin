@@ -12,9 +12,7 @@ conda deactivate
 source .venv/bin/activate
 # At this point, you should be in the (openpi) environment
 uv pip install portalocker tabulate yacs iopath fvcore
-cd ../../third_party/pytorch3d_simplified/
-export PYTORCH3D_NO_EXTENSION=1 # no CUDA
-uv pip install .
+export TORCH_CUDA_ARCH_LIST="8.6" && export PYTORCH3D_NO_NINJA=1 && cd ../../third_party/pytorch3d_simplified && uv pip install . --no-build-isolation
 # if error:
 python setup.py install
 pip uninstall pytorch3d

@@ -1970,7 +1970,7 @@ wheels = [
 [[package]]
 name = "lerobot"
 version = "0.1.0"
-source = { editable = "../../third_party/lerobot" }
+source = { git = "https://github.com/huggingface/lerobot?rev=a445d9c9da6bea99a8972daa4fe1fdd053d711d2#a445d9c9da6bea99a8972daa4fe1fdd053d711d2" }
 dependencies = [
     { name = "av" },
     { name = "cmake" },
@@ -2001,63 +2001,6 @@ dependencies = [
     { name = "wandb" },
     { name = "zarr" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "av", specifier = ">=14.2.0" },
-    { name = "cmake", specifier = ">=3.29.0.1" },
-    { name = "datasets", specifier = ">=2.19.0" },
-    { name = "debugpy", marker = "extra == 'dev'", specifier = ">=1.8.1" },
-    { name = "deepdiff", specifier = ">=7.0.1" },
-    { name = "diffusers", specifier = ">=0.27.2" },
-    { name = "draccus", specifier = "==0.10.0" },
-    { name = "dynamixel-sdk", marker = "extra == 'dynamixel'", specifier = ">=3.7.31" },
-    { name = "einops", specifier = ">=0.8.0" },
-    { name = "feetech-servo-sdk", marker = "extra == 'feetech'", specifier = ">=1.0.0" },
-    { name = "flask", specifier = ">=3.0.3" },
-    { name = "gdown", specifier = ">=5.1.0" },
-    { name = "gym-aloha", marker = "python_full_version < '4.0' and extra == 'aloha'", specifier = ">=0.1.1" },
-    { name = "gym-dora", marker = "python_full_version < '4.0' and extra == 'dora'", git = "https://github.com/dora-rs/dora-lerobot.git?subdirectory=gym_dora" },
-    { name = "gym-pusht", marker = "python_full_version < '4.0' and extra == 'pusht'", specifier = ">=0.1.5" },
-    { name = "gym-xarm", marker = "python_full_version < '4.0' and extra == 'xarm'", specifier = ">=0.1.1" },
-    { name = "gymnasium", specifier = "==0.29.1" },
-    { name = "h5py", specifier = ">=3.10.0" },
-    { name = "hello-robot-stretch-body", marker = "python_full_version < '4.0' and sys_platform == 'linux' and extra == 'stretch'", specifier = ">=0.7.27" },
-    { name = "hf-doc-builder", marker = "extra == 'docs'", git = "https://github.com/huggingface/doc-builder.git?rev=main" },
-    { name = "huggingface-hub", extras = ["hf-transfer", "cli"], marker = "python_full_version < '4.0'", specifier = ">=0.27.1" },
-    { name = "imagecodecs", marker = "extra == 'umi'", specifier = ">=2024.1.1" },
-    { name = "imageio", extras = ["ffmpeg"], specifier = ">=2.34.0" },
-    { name = "jsonlines", specifier = ">=4.0.0" },
-    { name = "numba", specifier = ">=0.59.0" },
-    { name = "omegaconf", specifier = ">=2.3.0" },
-    { name = "opencv-python-headless", specifier = ">=4.9.0" },
-    { name = "packaging", specifier = ">=24.2" },
-    { name = "pandas", marker = "extra == 'video-benchmark'", specifier = ">=2.2.2" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7.0" },
-    { name = "pymunk", specifier = ">=6.6.0" },
-    { name = "pynput", specifier = ">=1.7.7" },
-    { name = "pynput", marker = "extra == 'dynamixel'", specifier = ">=1.7.7" },
-    { name = "pynput", marker = "extra == 'feetech'", specifier = ">=1.7.7" },
-    { name = "pynput", marker = "extra == 'stretch'", specifier = ">=1.7.7" },
-    { name = "pyrealsense2", marker = "sys_platform != 'darwin' and extra == 'intelrealsense'", specifier = ">=2.55.1.6486" },
-    { name = "pyrealsense2", marker = "sys_platform != 'darwin' and extra == 'stretch'", specifier = ">=2.55.1.6486" },
-    { name = "pyrender", marker = "sys_platform == 'linux' and extra == 'stretch'", git = "https://github.com/mmatl/pyrender.git" },
-    { name = "pyserial", marker = "extra == 'test'", specifier = ">=3.5" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.1.0" },
-    { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=5.0.0" },
-    { name = "pyzmq", specifier = ">=26.2.1" },
-    { name = "rerun-sdk", specifier = ">=0.21.0" },
-    { name = "scikit-image", marker = "extra == 'video-benchmark'", specifier = ">=0.23.2" },
-    { name = "termcolor", specifier = ">=2.4.0" },
-    { name = "torch", specifier = ">=2.2.1" },
-    { name = "torchcodec", marker = "(platform_machine != 'aarch64' and platform_machine != 'arm64' and platform_machine != 'armv7l' and sys_platform == 'linux') or (platform_machine != 'x86_64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')", specifier = ">=0.2.1" },
-    { name = "torchvision", specifier = ">=0.21.0" },
-    { name = "transformers", marker = "extra == 'pi0'", specifier = ">=4.48.0" },
-    { name = "wandb", specifier = ">=0.16.3" },
-    { name = "watchdog", marker = "extra == 'docs'", specifier = ">=6.0.0" },
-    { name = "zarr", specifier = ">=2.17.0" },
-]
-provides-extras = ["aloha", "docs", "dev", "dora", "dynamixel", "feetech", "intelrealsense", "pi0", "pusht", "stretch", "test", "umi", "video-benchmark", "xarm"]
 
 [[package]]
 name = "llvmlite"
@@ -3254,7 +3197,7 @@ requires-dist = [
     { name = "imageio", specifier = ">=2.36.1" },
     { name = "jax", extras = ["cuda12"], specifier = "==0.5.0" },
     { name = "jaxtyping", specifier = "==0.2.36" },
-    { name = "lerobot", editable = "../../third_party/lerobot" },
+    { name = "lerobot", git = "https://github.com/huggingface/lerobot?rev=a445d9c9da6bea99a8972daa4fe1fdd053d711d2" },
     { name = "ml-collections", specifier = "==1.0.0" },
     { name = "mplib", specifier = "==0.1.1" },
     { name = "numpy", specifier = "==1.26.4" },
@@ -4964,17 +4907,15 @@ wheels = [
 
 [[package]]
 name = "torchcodec"
-version = "0.4.0"
+version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/09/b7/481cec9d5d3d679919632bf873720c905cb4af8b157a363c8f4b470bfd35/torchcodec-0.4.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:4a1c488df253c62ed67b945f3be27a800acbc3fecacda52127fbabd72a2c6e2b", size = 2972557, upload-time = "2025-05-16T08:48:33.1Z" },
-    { url = "https://files.pythonhosted.org/packages/31/d8/7e00a46cb6f8d5dc01c88f67f5014835c39e1189f7ff0bbd82c363aeef0f/torchcodec-0.4.0-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:a2b3ee4c40236eec82faa61f5941f1bb746bed81bb0a0e00751142f0cbf0e5e0", size = 1328647, upload-time = "2025-05-16T08:48:17.15Z" },
-    { url = "https://files.pythonhosted.org/packages/04/9d/18944c18f5c29516fc5e920d764904b703775812c4b4756b11ed6970f1df/torchcodec-0.4.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:29ee0ad7514d5636d3a889cbdc92d4ed68e8f283d8da971fc6faa001e3e5dd67", size = 3461019, upload-time = "2025-05-16T08:48:34.751Z" },
-    { url = "https://files.pythonhosted.org/packages/17/26/2ac91c004d2c7cf813c8ccc151e7760b0d4b4f8ba26648d873e8fa7654be/torchcodec-0.4.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:0c1211bc2fb68cac5080d71635880e5a1ddc0d95f038cad1f7c3d5c32492f770", size = 1327571, upload-time = "2025-05-16T08:48:18.847Z" },
-    { url = "https://files.pythonhosted.org/packages/c6/7b/c15be1378e4816d72d2cb544cd161154131aedae2121667019452e47d78f/torchcodec-0.4.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:89d95adb8cf89cf85ff1c09c15f3de0df3b63c2e6cae5be0b387af0e8c84dbec", size = 3398659, upload-time = "2025-05-16T08:48:36.941Z" },
-    { url = "https://files.pythonhosted.org/packages/be/ce/451a1e79964790866d58f005a8789334434076457912ba295c73961a1ccf/torchcodec-0.4.0-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:474b476880b70f44dce47672a98e3516cd15bad2ddde2d0537319d12c0a3e80e", size = 1327372, upload-time = "2025-05-16T08:48:21.968Z" },
-    { url = "https://files.pythonhosted.org/packages/8f/04/bc5c72c279e77bdeaf0b26178c650e61800798c1fc4ff6b9353760f8ee5a/torchcodec-0.4.0-cp313-cp313t-macosx_11_0_arm64.whl", hash = "sha256:51e94f4eb63bac48e7ec4fc11c03ddb0cfa9af7210077d507666ecb2aa81e0ac", size = 3304288, upload-time = "2025-05-16T08:48:38.835Z" },
-    { url = "https://files.pythonhosted.org/packages/04/a5/9ff2b9819058fd3114a794c34df7992874ab62a0ad180879ba4d9d3f392d/torchcodec-0.4.0-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:87a85dfd1e1555c48c61bc152f03545d11940b71cf55079aa4c06cd41492467f", size = 1327762, upload-time = "2025-05-16T08:48:23.98Z" },
+    { url = "https://files.pythonhosted.org/packages/66/10/12f29a1986e96ac6f38a175b619ee9043fe1b7bdf0e1a69cc7714f57d8a0/TorchCodec-0.2.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:3621786b6eb1e9129c08012a2be32ded828e9c71614a267b874c9932f75874d8", size = 2831271, upload-time = "2025-03-12T12:55:28.28Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/46/17addda472381f27c443a8b1c041c0e017ac827ec57b1f4b3a53a80f7459/TorchCodec-0.2.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:540fa2acfcd0411b7925d95b9cb179f4eb9a08f0547fc4fb2f17f596dd834321", size = 766374, upload-time = "2025-03-12T12:55:19.043Z" },
+    { url = "https://files.pythonhosted.org/packages/02/fc/ad0931351b084c1a9840e018543d1316a1dbf6cc8b776c1d81045c2284fc/TorchCodec-0.2.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:d4b194bfd3f8cc77986e327c8a13d4eb86ef1eba860096e81117cd6b9cc64960", size = 3035140, upload-time = "2025-03-12T12:55:30.442Z" },
+    { url = "https://files.pythonhosted.org/packages/2c/e8/16093552d6381bc943bd1bfb0f27aa5c0382d8787449124d78b06213d96b/TorchCodec-0.2.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0735917480efe7c7b7ce3f1a7ccc9832faf43d085cce75cdd031fd7f8f14cbb9", size = 766567, upload-time = "2025-03-12T12:55:21.032Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/af/a689c3fbc878b6080d52fb109863931746ddd5d8285e9abf606510f839b1/TorchCodec-0.2.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:c3a001722d1e9f11d867a4ebf7e428efbb0f1f699909c22f99f91a5faba35e9f", size = 2972544, upload-time = "2025-03-12T12:55:32.596Z" },
+    { url = "https://files.pythonhosted.org/packages/e9/35/f19511614be88226bf805a6594a978190232cdb9e6948da08aea6edd6720/TorchCodec-0.2.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:deba4158f7be4744cfb9bd2b178230f20c45a5901c2c2b2fd08d0b2a180d3b65", size = 765962, upload-time = "2025-03-12T12:55:23.232Z" },
 ]
 
 [[package]]
