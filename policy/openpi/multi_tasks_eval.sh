@@ -22,7 +22,7 @@ head_camera_type="D435"
 train_config_name="pi0_base_aloha_robotwin_lora"
 checkpoint_num="25000"
 seed="0"
-model_name="pi0_7+7_0605"  # 单独设置model_name
+model_name="dual_tasks_actdim14_0605"  # 单独设置model_name
 
 # 创建结果目录
 results_dir="eval_result/${model_name}_${checkpoint_num}"

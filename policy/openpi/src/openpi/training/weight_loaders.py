@@ -167,7 +167,7 @@ class ActionDimAdaptiveWeightLoader(WeightLoader):
                     adapted_flat[key] = adapted_weight
         
         return flax.traverse_util.unflatten_dict(adapted_flat, sep="/")
-    
+
     def _resize_weight(self, weight: np.ndarray, target_shape: tuple, key: str) -> np.ndarray:
         """Resize a weight tensor to match target shape."""
         if "kernel" in key:
