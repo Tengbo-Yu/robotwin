@@ -415,7 +415,8 @@ _CONFIGS = [
             ),
         ),
         freeze_filter=pi0.Pi0Config(
-            paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
+            paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora",
+            action_dim=14,
         ).get_freeze_filter(),
         batch_size=32, # the total batch_size not pre_gpu batch_size
         # weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
@@ -460,7 +461,7 @@ _CONFIGS = [
         batch_size=32,
         weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_fast_base/params"),
         num_train_steps=30000,
-        fsdp_devices=2, # refer line 359
+        fsdp_devices=1, # refer line 359
     ),
      # pi0_base by full
     TrainConfig(

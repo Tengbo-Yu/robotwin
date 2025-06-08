@@ -20,24 +20,25 @@ fi
 # 公共参数配置
 head_camera_type="D435"
 train_config_name="pi0_base_aloha_robotwin_lora"
-checkpoint_num="29999"
+checkpoint_num="10000"
 seed="0"
+model_name="dual_tasks_actdim14_0605"  # 单独设置model_name
 
 # 创建结果目录
-results_dir="eval_result/eval_results_$(date +%Y%m%d_%H%M%S)"
+results_dir="eval_result/${model_name}_${checkpoint_num}"
 mkdir -p $results_dir
 summary_file="$results_dir/summary.txt"
 
 # 定义要评估的任务列表
-# 格式: "task_name model_name"
+# 格式: "task_name"
 tasks=(
-    "block_handover dual_tasks_0529"
-    "diverse_bottles_pick dual_tasks_0529"
-    "dual_bottles_pick_easy dual_tasks_0529"
-    "dual_bottles_pick_hard dual_tasks_0529"
-    "dual_shoes_place dual_tasks_0529"
+    "block_handover"
+    "diverse_bottles_pick"
+    "dual_bottles_pick_easy"
+    "dual_bottles_pick_hard"
+    "dual_shoes_place"
     # 在这里添加更多任务
-    # "your_task_name your_model_name"
+    # "your_task_name"
 )
 
 echo "开始批量评估，使用GPU: $gpu_id"
@@ -55,20 +56,18 @@ echo "================================" >> $summary_file
 # 逐个评估任务
 for i in "${!tasks[@]}"; do
     # 解析任务名和模型名
-    task_info=(${tasks[$i]})
-    task_name=${task_info[0]}
-    model_name=${task_info[1]}
+    task_name=${tasks[$i]}
     
     # 为当前任务创建结果文件
     task_result_file="$results_dir/${task_name}.txt"
     
     echo ""
-    echo "[$((i+1))/${#tasks[@]}] 正在评估任务: $task_name (模型: $model_name)"
+    echo "[$((i+1))/${#tasks[@]}] 正在评估任务: $task_name"
     echo "参数: $task_name $head_camera_type $train_config_name $model_name $checkpoint_num $seed $gpu_id"
     echo "----------------------------------------"
     
     # 记录任务开始信息到结果文件
-    echo "[$((i+1))/${#tasks[@]}] 任务: $task_name (模型: $model_name)" > $task_result_file
+    echo "[$((i+1))/${#tasks[@]}] 任务: $task_name" > $task_result_file
     echo "参数: $task_name $head_camera_type $train_config_name $model_name $checkpoint_num $seed $gpu_id" >> $task_result_file
     echo "----------------------------------------" >> $task_result_file
     
