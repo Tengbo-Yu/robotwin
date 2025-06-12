@@ -1,17 +1,55 @@
 #!/bin/bash
 
 # 批量评估脚本
-# 使用方法: ./batch_eval.sh [gpu_id] [delay_hours]
+# 使用方法: ./batch_eval.sh [gpu_id] [delay_hours] [monitor_gpu]
 # 示例: ./batch_eval.sh 0      # 立即在GPU 0上运行
 # 示例: ./batch_eval.sh 0 2    # 在2小时后在GPU 0上运行
+# 示例: ./batch_eval.sh 0 0 1  # 监控GPU 0，当内存占用低于1GB时运行
 
 # 设置默认GPU ID
 gpu_id=${1:-0}
 # 设置延迟时间（小时）
 delay_hours=${2:-0}
+# 是否监控GPU内存（0=不监控，1=监控）
+monitor_gpu=${3:-0}
 
+# 检查是否安装了nvidia-smi
+check_nvidia_smi() {
+    if ! command -v nvidia-smi &> /dev/null; then
+        echo "错误: 未找到nvidia-smi命令，无法监控GPU内存"
+        exit 1
+    fi
+}
+
+# 监控GPU内存使用情况，当内存占用小于1GB时返回
+wait_for_gpu_available() {
+    local gpu=$1
+    local threshold_mb=1024  # 1GB
+    
+    echo "开始监控GPU $gpu 内存使用情况，等待内存占用低于 ${threshold_mb}MB..."
+    
+    while true; do
+        # 获取GPU已用内存（MB）
+        local used_memory=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -i $gpu | tr -d ' ')
+        
+        echo "$(date) - GPU $gpu 内存使用: ${used_memory}MB / 阈值: ${threshold_mb}MB"
+        
+        if [ "$used_memory" -lt "$threshold_mb" ]; then
+            echo "GPU $gpu 内存占用已低于 ${threshold_mb}MB，开始执行评估任务"
+            break
+        fi
+        
+        # 每30秒检查一次
+        sleep 30
+    done
+}
+
+# 如果需要监控GPU内存
+if [ "$monitor_gpu" -eq 1 ]; then
+    check_nvidia_smi
+    wait_for_gpu_available $gpu_id
 # 如果指定了延迟时间，则等待
-if [ $delay_hours -gt 0 ]; then
+elif [ $delay_hours -gt 0 ]; then
     echo "将在 $delay_hours 小时后开始评估..."
     delay_seconds=$((delay_hours * 3600))
     sleep $delay_seconds
@@ -20,9 +58,9 @@ fi
 # 公共参数配置
 head_camera_type="D435"
 train_config_name="pi0_base_aloha_robotwin_lora"
-checkpoint_num="25000"
+checkpoint_num="29999"
 seed="0"
-model_name="dual_tasks_actdim14_0605"  # 单独设置model_name
+model_name="8_tasks_7+7_0609"  # 单独设置model_name
 
 # 创建结果目录
 results_dir="eval_result/${model_name}_${checkpoint_num}"
@@ -37,6 +75,9 @@ tasks=(
     "dual_bottles_pick_easy"
     "dual_bottles_pick_hard"
     "dual_shoes_place"
+    "mug_hanging_easy"
+    "mug_hanging_hard"
+    "put_apple_cabinet"
     # 在这里添加更多任务
     # "your_task_name"
 )

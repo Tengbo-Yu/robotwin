@@ -412,6 +412,7 @@ class Pi0(_model.BaseModel):
             # print(self.config.dual_arm_separate_denoise)
             # ----------------update----------------
             # 根据配置选择输出处理方式
+            # print(self.config.dual_arm_separate_denoise)
             if self.config.dual_arm_separate_denoise:
                 # 双臂分别处理模式
                 single_arm_dim = self.config.action_dim // 2
