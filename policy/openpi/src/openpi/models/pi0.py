@@ -11,6 +11,7 @@ from typing_extensions import override
 from openpi.models import model as _model
 import openpi.models.gemma as _gemma
 import openpi.models.siglip as _siglip
+from openpi.models import CL1 as _contrastive  # 导入对比学习模块
 from openpi.shared import array_typing as at
 import openpi.shared.nnx_utils as nnx_utils
 
@@ -64,6 +65,88 @@ def posemb_sincos(
     return jnp.concatenate([jnp.sin(sinusoid_input), jnp.cos(sinusoid_input)], axis=-1)
 
 
+def get_task_category(task_index):
+    """根据task_index获取任务类别"""
+    task_index = jnp.asarray(task_index)
+    
+    # 定义任务类别范围
+    categories = jnp.array([
+        (0, 34),    # 类别0: 0-34
+        (35, 96),   # 类别1: 35-96
+        (97, 138),  # 类别2: 97-138
+        (139, 169), # 类别3: 139-169
+        (170, 199), # 类别4: 170-199
+        (200, 209), # 类别5: 200-209
+    ])
+    
+    # 创建条件检查
+    conditions = []
+    for i, (start, end) in enumerate(categories):
+        conditions.append((task_index >= start) & (task_index <= end))
+    
+    # 使用jnp.select来根据条件选择类别
+    category = jnp.select(conditions, jnp.arange(len(categories)), default=-1)
+    
+    return category
+
+
+def infonce_loss(image_features, text_features, task_indices, temperature=0.07):
+    """
+    基于任务类别的InfoNCE对比学习损失
+    
+    Args:
+        image_features: [B, D] 图像特征
+        text_features: [B, D] 文本特征  
+        task_indices: [B] 任务索引
+        temperature: 温度参数
+        
+    Returns:
+        对比学习损失
+    """
+    batch_size = image_features.shape[0]
+    
+    # 获取任务类别
+    task_categories = jax.vmap(get_task_category)(task_indices)
+    
+    # 计算特征相似度矩阵
+    # 归一化特征
+    image_features = image_features / (jnp.linalg.norm(image_features, axis=-1, keepdims=True) + 1e-8)
+    text_features = text_features / (jnp.linalg.norm(text_features, axis=-1, keepdims=True) + 1e-8)
+    
+    # 计算相似度矩阵 [B, B]
+    similarity_matrix = jnp.dot(image_features, text_features.T) / temperature
+    
+    # 创建任务类别掩码矩阵 [B, B]
+    # 相同类别的任务为正例(True)，不同类别为负例(False)
+    task_category_matrix = task_categories[:, None] == task_categories[None, :]
+    
+    # 创建对角线掩码，避免自己和自己对比
+    diagonal_mask = jnp.eye(batch_size, dtype=bool)
+    
+    # 正例掩码：相同任务类别但不是自己
+    positive_mask = task_category_matrix & (~diagonal_mask)
+    
+    # 计算InfoNCE损失
+    # 对于每个样本，计算其与所有样本的相似度
+    exp_sim = jnp.exp(similarity_matrix)
+    
+    # 分母：与所有样本的相似度之和（除了自己）
+    denominator = jnp.sum(exp_sim * (~diagonal_mask), axis=1)
+    
+    # 分子：与正例的相似度之和
+    numerator = jnp.sum(exp_sim * positive_mask, axis=1)
+    
+    # 避免除零，如果没有正例则损失为0
+    valid_samples = jnp.sum(positive_mask, axis=1) > 0
+    
+    # 计算损失
+    loss = -jnp.log(numerator / (denominator + 1e-8) + 1e-8)
+    loss = jnp.where(valid_samples, loss, 0.0)
+    
+    # 返回平均损失
+    return jnp.mean(loss)
+
+
 @dataclasses.dataclass(frozen=True)
 class Pi0Config(_model.BaseModelConfig):
     dtype: str = "bfloat16"
@@ -77,6 +160,12 @@ class Pi0Config(_model.BaseModelConfig):
     
     # 新增：是否对双臂分别进行降噪处理
     dual_arm_separate_denoise: bool = False
+    
+    # 第一个对比学习模块（CL1）相关配置
+    enable_contrastive_learning_cl1: bool = False
+    contrastive_loss_weight_cl1: float = 0.1
+    contrastive_temperature_cl1: float = 0.07
+    contrastive_projection_dim_cl1: int = 256
 
     @property
     @override
@@ -189,6 +278,14 @@ class Pi0(_model.BaseModel):
             self.right_arm_in_proj = nnx.Linear(single_arm_dim, action_expert_config.width, rngs=rngs)
             self.right_arm_out_proj = nnx.Linear(action_expert_config.width, single_arm_dim, rngs=rngs)
         
+        # 第一个对比学习模块（CL1）
+        if config.enable_contrastive_learning_cl1:
+            self.contrastive_module_cl1 = _contrastive.create_contrastive_learning_module(
+                input_dim=paligemma_config.width,
+                projection_dim=config.contrastive_projection_dim_cl1,
+                rngs=rngs
+            )
+        
         # ----------------update----------------
 
     @at.typecheck
@@ -198,6 +295,7 @@ class Pi0(_model.BaseModel):
         input_mask = []
         ar_mask = []
         tokens = []
+        
         # embed images
         for name in obs.images:
             image_tokens, _ = self.PaliGemma.img(obs.images[name], train=False)
@@ -220,9 +318,11 @@ class Pi0(_model.BaseModel):
             input_mask.append(obs.tokenized_prompt_mask)
             # full attention between image and language inputs
             ar_mask += [False] * tokenized_inputs.shape[1]
+                
         tokens = jnp.concatenate(tokens, axis=1)
         input_mask = jnp.concatenate(input_mask, axis=1)
         ar_mask = jnp.array(ar_mask)
+        
         return tokens, input_mask, ar_mask
 
     @at.typecheck
@@ -299,8 +399,8 @@ class Pi0(_model.BaseModel):
 
     @override
     def compute_loss(
-        self, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions, *, train: bool = False
-    ) -> at.Float[at.Array, "*b ah"]:
+        self, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions, *, train: bool = False, task_indices: at.Int[at.Array, "b"] | None = None
+    ) -> at.Float[at.Array, "*b ah"] | dict[str, at.Float[at.Array, "*b ah"]]:
         preprocess_rng, noise_rng, time_rng = jax.random.split(rng, 3)
         observation = _model.preprocess_observation(preprocess_rng, observation, train=train)
 
@@ -310,13 +410,6 @@ class Pi0(_model.BaseModel):
         time_expanded = time[..., None, None]
         x_t = time_expanded * noise + (1 - time_expanded) * actions # 对真实动作添加噪声
         u_t = noise - actions # 噪声减去真实动作
-
-        # print("----------------------------",actions.shape) # [32, 50, 32] batch_size=32, action_horizon=50, action_dim=32
-        # # 只有前14维有值，后面均为0，因为训练时padding的就是0
-        # # 使用jax.debug.print，它可以在jit编译的函数内部打印值
-        # jax.debug.print("具体动作值: {x}", x=actions[0,0])
-        # jax.debug.print("动作形状: {shape}", shape=actions.shape)
-        # jax.debug.print("第一个动作的第一个元素: {val}", val=actions[0,0,0])
 
         # one big forward pass of prefix + suffix at once
         prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
@@ -329,8 +422,6 @@ class Pi0(_model.BaseModel):
             [prefix_tokens, suffix_tokens], mask=attn_mask, positions=positions
         )
         
-        # print("--------------------------------")
-        # print(self.config.dual_arm_separate_denoise)
         # ----------------update----------------
         # 根据配置选择输出处理方式
         if self.config.dual_arm_separate_denoise:
@@ -358,7 +449,72 @@ class Pi0(_model.BaseModel):
             # 原始的整体处理模式
             v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
 
-        return jnp.mean(jnp.square(v_t - u_t), axis=-1)
+        # 计算主要的扩散损失
+        diffusion_loss = jnp.mean(jnp.square(v_t - u_t), axis=-1)
+        
+        # 如果启用CL1对比学习且在训练模式下，添加对比学习损失
+        contrastive_loss_cl1 = 0.0
+        if self.config.enable_contrastive_learning_cl1 and train and task_indices is not None:
+            # 在此处直接提取对比学习特征
+            image_features, text_features = self._extract_contrastive_features_cl1(observation)
+            
+            if image_features is not None and text_features is not None:
+                # 计算CL1对比学习损失
+                contrastive_loss_cl1 = self.contrastive_module_cl1.compute_contrastive_loss(
+                    image_features, 
+                    text_features,
+                    task_indices,
+                    temperature=self.config.contrastive_temperature_cl1
+                )
+                
+                # 将对比学习损失添加到主损失中
+                # 由于diffusion_loss的形状是[batch, action_horizon]，我们需要将contrastive_loss广播到相同形状
+                contrastive_loss_expanded = jnp.broadcast_to(
+                    contrastive_loss_cl1, diffusion_loss.shape
+                )
+                
+                total_loss = diffusion_loss + self.config.contrastive_loss_weight_cl1 * contrastive_loss_expanded
+                
+                # 返回详细损失信息用于wandb记录
+                return {
+                    "total_loss": total_loss,
+                    "diffusion_loss": diffusion_loss,
+                    "contrastive_loss_cl1": jnp.broadcast_to(contrastive_loss_cl1, diffusion_loss.shape)
+                }
+        
+        # 如果没有对比学习，只返回扩散损失
+        return diffusion_loss
+    
+    def _extract_contrastive_features_cl1(self, obs: _model.Observation):
+        """提取用于CL1对比学习的特征，在compute_loss方法内部调用"""
+        if not hasattr(self, 'contrastive_module_cl1'):
+            return None, None
+            
+        # 收集图像tokens和masks
+        image_tokens_list = []
+        image_masks_list = []
+        
+        for name in obs.images:
+            image_tokens, _ = self.PaliGemma.img(obs.images[name], train=False)
+            image_tokens_list.append(image_tokens)
+            image_masks_list.append(obs.image_masks[name])
+        
+        # 提取图像特征
+        image_features = None
+        if image_tokens_list:
+            image_features = self.contrastive_module_cl1.extract_image_features(
+                image_tokens_list, image_masks_list
+            )
+        
+        # 提取文本特征
+        text_features = None
+        if obs.tokenized_prompt is not None:
+            text_tokens = self.PaliGemma.llm(obs.tokenized_prompt, method="embed")
+            text_features = self.contrastive_module_cl1.extract_text_features(
+                text_tokens, obs.tokenized_prompt_mask
+            )
+        
+        return image_features, text_features
 
     @override
     def sample_actions(
@@ -408,11 +564,8 @@ class Pi0(_model.BaseModel):
             )
             assert prefix_out is None
 
-            # print("--------------------------------")
-            # print(self.config.dual_arm_separate_denoise)
             # ----------------update----------------
             # 根据配置选择输出处理方式
-            # print(self.config.dual_arm_separate_denoise)
             if self.config.dual_arm_separate_denoise:
                 # 双臂分别处理模式
                 single_arm_dim = self.config.action_dim // 2

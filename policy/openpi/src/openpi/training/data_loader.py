@@ -11,6 +11,7 @@ import numpy as np
 import torch
 
 import openpi.models.model as _model
+import openpi.shared.array_typing as at
 import openpi.training.config as _config
 import openpi.transforms as _transforms
 
@@ -134,7 +135,7 @@ def create_data_loader(
     shuffle: bool = False,
     num_batches: int | None = None,
     num_workers: int = 0,
-) -> DataLoader[tuple[_model.Observation, _model.Actions]]:
+) -> DataLoader[tuple[_model.Observation, _model.Actions] | tuple[_model.Observation, _model.Actions, at.Int[at.Array, "b"]]]:
     """Create a data loader for training.
 
     Args:
@@ -174,7 +175,23 @@ def create_data_loader(
 
         def __iter__(self):
             for batch in self._data_loader:
-                yield _model.Observation.from_dict(batch), batch["actions"]
+                # 添加调试信息
+                # print(f"\033[92mOriginal batch keys: {list(batch.keys()) if isinstance(batch, dict) else 'Not a dict'}\033[0m")
+                # if isinstance(batch, dict) and "task_index" in batch:
+                #     print(f"\033[92mOriginal task_index shape: {batch['task_index'].shape}, values: {batch['task_index']}\033[0m")
+                
+                # 在调用Observation.from_dict之前先提取task_index，因为from_dict会丢弃task_index字段
+                task_indices = batch.get("task_index", None)
+                
+                observation = _model.Observation.from_dict(batch)
+                actions = batch["actions"]
+                
+                if task_indices is not None:
+                    # print(f"\033[92mYielding with task_indices: {task_indices.shape}\033[0m")
+                    yield observation, actions, task_indices
+                else:
+                    # print(f"\033[92mYielding without task_indices\033[0m")
+                    yield observation, actions
 
     return DataLoaderImpl(data_config, data_loader)
 

@@ -81,7 +81,9 @@ class ActionDimAdaptiveWeightLoader(WeightLoader):
         adapted_params = self._adapt_action_dimensions(loaded_params, params)
         
         # Add all missing LoRA weights and other missing parameters
-        return _merge_params(adapted_params, params, missing_regex=".*lora.*")
+        # 排除对比学习相关参数，让它们保持随机初始化
+        # 这样可以在保留预训练权重的同时，单独训练对比学习投影层
+        return _merge_params(adapted_params, params, missing_regex=".*lora.*|.*contrastive_module_cl1.*")
     
     def _adapt_dual_arm_structure(self, loaded_params: at.Params, target_params: at.Params) -> at.Params:
         """Create dual arm projection layers if needed from existing single-arm projections."""

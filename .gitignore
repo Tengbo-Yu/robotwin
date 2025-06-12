@@ -26,3 +26,4 @@ policy/weights/*
 !policy/weights/README.md
 result_pi0/
 policy/openpi/eval_result/*
+wandb/*

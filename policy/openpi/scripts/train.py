@@ -137,25 +137,49 @@ def train_step(
     config: _config.TrainConfig,
     rng: at.KeyArrayLike,
     state: training_utils.TrainState,
-    batch: tuple[_model.Observation, _model.Actions],
+    batch: tuple[_model.Observation, _model.Actions] | tuple[_model.Observation, _model.Actions, at.Int[at.Array, "b"]],
 ) -> tuple[training_utils.TrainState, dict[str, at.Array]]:
     model = nnx.merge(state.model_def, state.params)
     model.train()
 
     @at.typecheck
     def loss_fn(
-        model: _model.BaseModel, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions
+        model: _model.BaseModel, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions, task_indices: at.Int[at.Array, "b"] | None = None
     ):
-        # train_step中的loss是compute_loss的返回值的均值（一个标量），compute_loss的返回值是v_t - u_t的平方
-        chunked_loss = model.compute_loss(rng, observation, actions, train=True)
-        return jnp.mean(chunked_loss)
+        loss_result = model.compute_loss(rng, observation, actions, train=True, task_indices=task_indices)
+        
+        # 处理不同类型的损失返回值
+        if isinstance(loss_result, dict):
+            # 如果返回字典，使用total_loss作为主损失
+            total_loss = jnp.mean(loss_result["total_loss"])
+            diffusion_loss = jnp.mean(loss_result["diffusion_loss"])
+            contrastive_loss_cl1 = jnp.mean(loss_result.get("contrastive_loss_cl1", 0.0))
+            
+            return total_loss, {
+                "diffusion_loss": diffusion_loss,
+                "contrastive_loss_cl1": contrastive_loss_cl1
+            }
+        else:
+            # 如果返回单一损失值（扩散损失）
+            chunked_loss = loss_result
+            total_loss = jnp.mean(chunked_loss)
+            return total_loss, {
+                "diffusion_loss": total_loss,
+                "contrastive_loss_cl1": 0.0
+            }
 
     train_rng = jax.random.fold_in(rng, state.step)
-    observation, actions = batch
+    
+    # 处理可能包含task_indices的批次
+    if len(batch) == 3:
+        observation, actions, task_indices = batch
+    else:
+        observation, actions = batch
+        task_indices = None
 
     # Filter out frozen params.
     diff_state = nnx.DiffState(0, config.trainable_filter)
-    loss, grads = nnx.value_and_grad(loss_fn, argnums=diff_state)(model, train_rng, observation, actions)
+    (loss, detailed_losses), grads = nnx.value_and_grad(loss_fn, argnums=diff_state, has_aux=True)(model, train_rng, observation, actions, task_indices)
 
     params = state.params.filter(config.trainable_filter)
     updates, new_opt_state = state.tx.update(grads, state.opt_state, params)
@@ -185,6 +209,8 @@ def train_step(
     )
     info = {
         "loss": loss,
+        "diffusion_loss": detailed_losses["diffusion_loss"],
+        "contrastive_loss_cl1": detailed_losses["contrastive_loss_cl1"],
         "grad_norm": optax.global_norm(grads),
         "param_norm": optax.global_norm(kernel_params),
     }
@@ -250,6 +276,7 @@ def main(config: _config.TrainConfig):
     )
     print("\033[91maction_dim: ", config.model.action_dim, "\033[0m")
     print("\033[91mdual_arm_separate_denoise: ", config.model.dual_arm_separate_denoise, "\033[0m") 
+    print("\033[91menable_contrastive_learning_cl1: ", config.model.enable_contrastive_learning_cl1, "\033[0m")
     infos = []
     for step in pbar:
         with sharding.set_mesh(mesh):

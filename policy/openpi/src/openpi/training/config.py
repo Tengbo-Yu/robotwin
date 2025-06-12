@@ -217,6 +217,8 @@ class LeRobotAlohaDataConfig(DataConfigFactory):
                         "images": {"cam_high": "observation.images.top"},
                         "state": "observation.state",
                         "actions": "action",
+                        "prompt": "prompt",
+                        "task_index": "task_index",
                     }
                 )
             ]
@@ -335,7 +337,7 @@ class TrainConfig:
     num_train_steps: int = 30_000
 
     # How often (in steps) to log training metrics.
-    log_interval: int = 100
+    log_interval: int = 1
     # How often (in steps) to save checkpoints.
     save_interval: int = 1000
     # If set, any existing checkpoints matching step % keep_period == 0 will not be deleted.
@@ -390,7 +392,8 @@ _CONFIGS = [
         name="pi0_base_aloha_robotwin_lora",
         model=pi0.Pi0Config(paligemma_variant="gemma_2b_lora", 
                             action_expert_variant="gemma_300m_lora",
-                            dual_arm_separate_denoise=True  # 启用双臂分别降噪的权重适配
+                            dual_arm_separate_denoise=True,  # 启用双臂分别降噪的权重适配
+                            enable_contrastive_learning_cl1=True,  # 启用对比学习
                             ),
         data=LeRobotAlohaDataConfig(
             # repo_id="dual_tasks",# your datasets repo_id
@@ -408,6 +411,7 @@ _CONFIGS = [
                             "state": "observation.state",
                             "actions": "action",
                             "prompt": "prompt",
+                            "task_index": "task_index",
                         }
                     )
                 ]
@@ -450,6 +454,7 @@ _CONFIGS = [
                             "state": "observation.state",
                             "actions": "action",
                             "prompt": "prompt",
+                            "task_index": "task_index",
                         }
                     )
                 ]
@@ -486,6 +491,7 @@ _CONFIGS = [
                             "state": "observation.state",
                             "actions": "action",
                             "prompt": "prompt",
+                            "task_index": "task_index",
                         }
                     )
                 ]
@@ -521,6 +527,7 @@ _CONFIGS = [
                             "state": "observation.state",
                             "actions": "action",
                             "prompt": "prompt",
+                            "task_index": "task_index",
                         }
                     )
                 ]

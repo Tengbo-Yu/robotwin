@@ -70,8 +70,8 @@ summary_file="$results_dir/summary.txt"
 # 定义要评估的任务列表
 # 格式: "task_name"
 tasks=(
-    "block_handover"
-    "diverse_bottles_pick"
+    # "block_handover"
+    # "diverse_bottles_pick"
     "dual_bottles_pick_easy"
     "dual_bottles_pick_hard"
     "dual_shoes_place"

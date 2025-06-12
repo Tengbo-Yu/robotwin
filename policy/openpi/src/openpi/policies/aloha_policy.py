@@ -91,6 +91,10 @@ class AlohaInputs(transforms.DataTransformFn):
         if "prompt" in data:
             inputs["prompt"] = data["prompt"]
 
+        # 保留task_index字段用于对比学习
+        if "task_index" in data:
+            inputs["task_index"] = data["task_index"]
+
         return inputs
 
 
