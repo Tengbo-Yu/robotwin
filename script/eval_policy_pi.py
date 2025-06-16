@@ -47,6 +47,8 @@ def main(usr_args):
     model_name = usr_args.model_name
     checkpoint_num = usr_args.checkpoint_num
     seed = usr_args.seed
+    dual_arm_separate_denoise = usr_args.dual_arm_separate_denoise
+    enable_contrastive_learning_cl1 = usr_args.enable_contrastive_learning_cl1
 
     with open(f'./task_config/{task_name}.yml', 'r', encoding='utf-8') as f:
         args = yaml.load(f.read(), Loader=yaml.FullLoader)
@@ -85,8 +87,9 @@ def main(usr_args):
     suc_nums = []
     test_num = 100
     topk = 1
-    
-    model = PI0(task_name,train_config_name,model_name,checkpoint_num)
+    model = PI0(task_name,train_config_name,model_name,checkpoint_num,
+                dual_arm_separate_denoise=dual_arm_separate_denoise,
+                enable_contrastive_learning_cl1=enable_contrastive_learning_cl1)
    
     model.random_set_language()
     st_seed, suc_num = test_policy(task, args, model, st_seed, test_num=test_num)
@@ -178,6 +181,16 @@ def test_policy(Demo_class, args, policy, st_seed, test_num=20):
 
     return now_seed, Demo_class.suc
 
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise ValueError('Boolean value expected.')
+    
 if __name__ == "__main__":
     from test_render import Sapien_TEST
     Sapien_TEST()
@@ -190,6 +203,8 @@ if __name__ == "__main__":
     parser.add_argument('model_name', type=str)
     parser.add_argument('checkpoint_num', type=int)
     parser.add_argument('seed', type=int, default=0)
+    parser.add_argument('dual_arm_separate_denoise', type=str2bool, default=False)
+    parser.add_argument('enable_contrastive_learning_cl1', type=str2bool, default=False)
     usr_args = parser.parse_args()
     
     main(usr_args)

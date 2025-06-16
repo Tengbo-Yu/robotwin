@@ -60,7 +60,9 @@ head_camera_type="D435"
 train_config_name="pi0_base_aloha_robotwin_lora"
 checkpoint_num="29999"
 seed="0"
-model_name="8_tasks_7+7_0609"  # 单独设置model_name
+model_name="8_dual_tasks_7+7_CL1_0613"  # 单独设置model_name
+dual_arm_separate_denoise=1
+enable_contrastive_learning_cl1=1
 
 # 创建结果目录
 results_dir="eval_result/${model_name}_${checkpoint_num}"
@@ -70,8 +72,8 @@ summary_file="$results_dir/summary.txt"
 # 定义要评估的任务列表
 # 格式: "task_name"
 tasks=(
-    # "block_handover"
-    # "diverse_bottles_pick"
+    "block_handover"
+    "diverse_bottles_pick"
     "dual_bottles_pick_easy"
     "dual_bottles_pick_hard"
     "dual_shoes_place"
@@ -113,7 +115,7 @@ for i in "${!tasks[@]}"; do
     echo "----------------------------------------" >> $task_result_file
     
     # 调用原始评估脚本
-    ./eval.sh $task_name $head_camera_type $train_config_name $model_name $checkpoint_num $seed $gpu_id
+    ./eval.sh $task_name $head_camera_type $train_config_name $model_name $checkpoint_num $seed $gpu_id $dual_arm_separate_denoise $enable_contrastive_learning_cl1
     
     # 检查评估是否成功
     if [ $? -eq 0 ]; then

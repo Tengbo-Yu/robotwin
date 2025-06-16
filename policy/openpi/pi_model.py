@@ -22,15 +22,25 @@ from openpi.policies import policy_config as _policy_config
 from openpi.shared import download
 from openpi.training import config as _config
 from openpi.training import data_loader as _data_loader
-
+import dataclasses
 class PI0:
-    def __init__(self, task_name,train_config_name,model_name,checkpoint_id):
+    def __init__(self, task_name,train_config_name,model_name,checkpoint_id,dual_arm_separate_denoise,enable_contrastive_learning_cl1):
         self.train_config_name = train_config_name
         self.task_name = task_name
         self.model_name = model_name
         self.checkpoint_id = checkpoint_id
+        self.dual_arm_separate_denoise = dual_arm_separate_denoise
+        self.enable_contrastive_learning_cl1 = enable_contrastive_learning_cl1
 
         config = _config.get_config(self.train_config_name)
+        config = dataclasses.replace(
+            config,
+            model=dataclasses.replace(
+                config.model,
+                dual_arm_separate_denoise=self.dual_arm_separate_denoise,
+                enable_contrastive_learning_cl1=self.enable_contrastive_learning_cl1
+            )
+        )
         self.policy = _policy_config.create_trained_policy(config, f"policy/openpi/checkpoints/{self.train_config_name}/{self.model_name}/{self.checkpoint_id}")
         print("loading model success!")
         self.img_size = (224,224)
