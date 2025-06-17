@@ -58,38 +58,20 @@ def infonce_loss(image_features, text_features, task_indices, temperature=0.07):
         对比学习损失
     """
     batch_size = image_features.shape[0]
-    
-    # 获取任务类别
+
+    z = jnp.concatenate([image_features, text_features], axis=-1) # [B, 2D]
+    z = z / (jnp.linalg.norm(z, axis=-1, keepdims=True) + 1e-8)
+    similarity_matrix = jnp.dot(z, z.T) / temperature # [B, B]
+
     task_categories = jax.vmap(get_task_category)(task_indices)
-    
-    # 计算特征相似度矩阵
-    # 归一化特征
-    image_features = image_features / (jnp.linalg.norm(image_features, axis=-1, keepdims=True) + 1e-8)
-    text_features = text_features / (jnp.linalg.norm(text_features, axis=-1, keepdims=True) + 1e-8)
-    
-    # 计算相似度矩阵 [B, B]
-    similarity_matrix = jnp.dot(image_features, text_features.T) / temperature
-    
-    # 创建任务类别掩码矩阵 [B, B]
-    # 相同类别的任务为正例(True)，不同类别为负例(False)
-    task_category_matrix = task_categories[:, None] == task_categories[None, :]
-    
-    # 创建对角线掩码，避免自己和自己对比
+    task_mask = task_categories[:, None] == task_categories[None, :]
     diagonal_mask = jnp.eye(batch_size, dtype=bool)
-    
-    # 正例掩码：相同任务类别但不是自己
-    positive_mask = task_category_matrix & (~diagonal_mask)
-    
-    # 计算InfoNCE损失
-    # 对于每个样本，计算其与所有样本的相似度
+    positive_mask = task_mask & (~diagonal_mask)
+
     exp_sim = jnp.exp(similarity_matrix)
-    
-    # 分母：与所有样本的相似度之和（除了自己）
     denominator = jnp.sum(exp_sim * (~diagonal_mask), axis=1)
-    
-    # 分子：与正例的相似度之和
     numerator = jnp.sum(exp_sim * positive_mask, axis=1)
-    
+
     # 避免除零，如果没有正例则损失为0
     valid_samples = jnp.sum(positive_mask, axis=1) > 0
     
@@ -99,6 +81,47 @@ def infonce_loss(image_features, text_features, task_indices, temperature=0.07):
     
     # 返回平均损失
     return jnp.mean(loss)
+    
+    # # 获取任务类别
+    # task_categories = jax.vmap(get_task_category)(task_indices)
+    
+    # # 计算特征相似度矩阵
+    # # 归一化特征
+    # image_features = image_features / (jnp.linalg.norm(image_features, axis=-1, keepdims=True) + 1e-8)
+    # text_features = text_features / (jnp.linalg.norm(text_features, axis=-1, keepdims=True) + 1e-8)
+    
+    # # 计算相似度矩阵 [B, B]
+    # similarity_matrix = jnp.dot(image_features, text_features.T) / temperature
+    
+    # # 创建任务类别掩码矩阵 [B, B]
+    # # 相同类别的任务为正例(True)，不同类别为负例(False)
+    # task_category_matrix = task_categories[:, None] == task_categories[None, :]
+    
+    # # 创建对角线掩码，避免自己和自己对比
+    # diagonal_mask = jnp.eye(batch_size, dtype=bool)
+    
+    # # 正例掩码：相同任务类别但不是自己
+    # positive_mask = task_category_matrix & (~diagonal_mask)
+    
+    # # 计算InfoNCE损失
+    # # 对于每个样本，计算其与所有样本的相似度
+    # exp_sim = jnp.exp(similarity_matrix)
+    
+    # # 分母：与所有样本的相似度之和（除了自己）
+    # denominator = jnp.sum(exp_sim * (~diagonal_mask), axis=1)
+    
+    # # 分子：与正例的相似度之和
+    # numerator = jnp.sum(exp_sim * positive_mask, axis=1)
+    
+    # # 避免除零，如果没有正例则损失为0
+    # valid_samples = jnp.sum(positive_mask, axis=1) > 0
+    
+    # # 计算损失
+    # loss = -jnp.log(numerator / (denominator + 1e-8) + 1e-8)
+    # loss = jnp.where(valid_samples, loss, 0.0)
+    
+    # # 返回平均损失
+    # return jnp.mean(loss)
 
 
 class ContrastiveLearningModule(nnx.Module):
