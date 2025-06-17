@@ -342,7 +342,8 @@ class TrainConfig:
     save_interval: int = 1000
     # If set, any existing checkpoints matching step % keep_period == 0 will not be deleted.
     keep_period: int | None = 5000
-
+    # 每隔多少步进行一次对比学习t-SNE可视化
+    cl1_tsne_interval: int = 10
     # If true, will overwrite the checkpoint directory if it already exists.
     overwrite: bool = False
     # If true, will resume training from the last checkpoint.

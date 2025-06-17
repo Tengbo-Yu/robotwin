@@ -14,6 +14,9 @@ import jax.numpy as jnp
 import optax
 import tqdm_loggable.auto as tqdm
 import wandb
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
 
 import openpi.models.model as _model
 import openpi.shared.array_typing as at
@@ -68,6 +71,73 @@ def init_wandb(config: _config.TrainConfig, *, resuming: bool, log_code: bool = 
     if log_code:
         wandb.run.log_code(epath.Path(__file__).parent.parent)
 
+def tsne_visualize(features, task_categories, step):
+    """
+    Visualize contrastive learning features using t-SNE
+    
+    Args:
+        features: [B, D] normalized features
+        task_categories: [B] task categories
+        step: current training step
+    """
+    # 检查特征和类别
+    print(f"\033[96m[TSNE] Features shape: {features.shape}, dtype: {features.dtype}\033[0m")
+    print(f"\033[96m[TSNE] Categories shape: {task_categories.shape}, dtype: {task_categories.dtype}\033[0m")
+    print(f"\033[96m[TSNE] Unique categories: {np.unique(task_categories)}\033[0m")
+    
+    # Convert to numpy
+    features = np.array(features)
+    task_categories = np.array(task_categories)
+    
+    # 检查特征是否包含NaN或无穷大
+    if np.isnan(features).any() or np.isinf(features).any():
+        print("\033[91m[TSNE] Warning: Features contain NaN or Inf values\033[0m")
+        # 替换NaN和无穷大
+        features = np.nan_to_num(features)
+    
+    # Sample features to avoid slow t-SNE computation with too many data points
+    max_samples = 1000
+    if len(features) > max_samples:
+        print(f"\033[96m[TSNE] Sampling {max_samples} points from {len(features)} total points\033[0m")
+        indices = np.random.choice(len(features), max_samples, replace=False)
+        features = features[indices]
+        task_categories = task_categories[indices]
+
+    # t-SNE dimensionality reduction
+    try:
+        print("\033[96m[TSNE] Starting t-SNE computation...\033[0m")
+        tsne = TSNE(n_components=2, random_state=0, init='pca', learning_rate='auto')
+        features_2d = tsne.fit_transform(features)
+        print("\033[96m[TSNE] t-SNE computation complete\033[0m")
+    except Exception as e:
+        print(f"\033[91m[TSNE] Error in t-SNE computation: {e}\033[0m")
+        return
+
+    # Create figure
+    plt.figure(figsize=(10, 8))
+    
+    # Use different colors for each category
+    unique_categories = np.unique(task_categories)
+    print(f"\033[96m[TSNE] Plotting {len(unique_categories)} unique categories\033[0m")
+    
+    for cat in unique_categories:
+        idx = task_categories == cat
+        plt.scatter(features_2d[idx, 0], features_2d[idx, 1], label=f'Category {cat}', alpha=0.7, s=40)
+    
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.title(f't-SNE Visualization of Contrastive Features (Step {step})')
+    plt.xlabel('t-SNE Dimension 1')
+    plt.ylabel('t-SNE Dimension 2')
+    plt.tight_layout()
+    
+    # Upload to wandb
+    try:
+        wandb.log({"Contrastive_Features_tSNE": wandb.Image(plt)}, step=step)
+        print("\033[96m[TSNE] Successfully logged to wandb\033[0m")
+    except Exception as e:
+        print(f"\033[91m[TSNE] Error logging to wandb: {e}\033[0m")
+        
+    plt.close()
 
 def _load_weights_and_validate(loader: _weight_loaders.WeightLoader, params_shape: at.Params) -> at.Params:
     """Loads and validates the weights. Returns a loaded subset of the weights."""
@@ -155,9 +225,15 @@ def train_step(
             diffusion_loss = jnp.mean(loss_result["diffusion_loss"])
             contrastive_loss_cl1 = jnp.mean(loss_result.get("contrastive_loss_cl1", 0.0))
             
+            # 提取可视化数据
+            cl1_features = loss_result.get("cl1_features", None)
+            cl1_task_categories = loss_result.get("cl1_task_categories", None)
+            
             return total_loss, {
                 "diffusion_loss": diffusion_loss,
-                "contrastive_loss_cl1": contrastive_loss_cl1
+                "contrastive_loss_cl1": contrastive_loss_cl1,
+                "cl1_features": cl1_features,
+                "cl1_task_categories": cl1_task_categories
             }
         else:
             # 如果返回单一损失值（扩散损失）
@@ -165,7 +241,9 @@ def train_step(
             total_loss = jnp.mean(chunked_loss)
             return total_loss, {
                 "diffusion_loss": total_loss,
-                "contrastive_loss_cl1": 0.0
+                "contrastive_loss_cl1": 0.0,
+                "cl1_features": None,
+                "cl1_task_categories": None
             }
 
     train_rng = jax.random.fold_in(rng, state.step)
@@ -176,6 +254,12 @@ def train_step(
     else:
         observation, actions = batch
         task_indices = None
+        
+        # 如果批次中没有task_indices但对比学习已启用，尝试生成虚拟task_indices用于测试
+        if hasattr(config.model, 'enable_contrastive_learning_cl1') and config.model.enable_contrastive_learning_cl1:
+            print("\033[93m[WARNING] Creating fake task_indices for testing contrastive learning\033[0m")
+            batch_size = observation.state.shape[0]
+            task_indices = jnp.zeros((batch_size,), dtype=jnp.int32)
 
     # Filter out frozen params.
     diff_state = nnx.DiffState(0, config.trainable_filter)
@@ -214,6 +298,13 @@ def train_step(
         "grad_norm": optax.global_norm(grads),
         "param_norm": optax.global_norm(kernel_params),
     }
+    
+    # 确保cl1_features和cl1_task_categories被正确传递
+    if "cl1_features" in detailed_losses:
+        info["cl1_features"] = detailed_losses["cl1_features"]
+    if "cl1_task_categories" in detailed_losses:
+        info["cl1_task_categories"] = detailed_losses["cl1_task_categories"]
+    
     return new_state, info
 
 
@@ -251,6 +342,25 @@ def main(config: _config.TrainConfig):
     )
     data_iter = iter(data_loader)
     batch = next(data_iter)
+    
+    # 检查批次格式，确保包含task_indices
+    print("\033[92m[DATA] Batch type:", type(batch), "length:", len(batch), "\033[0m")
+    if len(batch) >= 3:
+        print("\033[92m[DATA] Batch contains task_indices with shape:", batch[2].shape, "\033[0m")
+    else:
+        print("\033[91m[DATA] Batch does not contain task_indices, this will prevent contrastive learning\033[0m")
+        # 检查数据配置是否包含task_index
+        if hasattr(config.data, 'repack_transforms'):
+            repack_dict = None
+            for transform in config.data.repack_transforms.inputs:
+                if hasattr(transform, 'mapping'):
+                    repack_dict = transform.mapping
+                    break
+            if repack_dict:
+                print("\033[92m[DATA] Repack mapping:", repack_dict, "\033[0m")
+                if 'task_index' not in repack_dict:
+                    print("\033[91m[DATA] task_index not found in repack mapping\033[0m")
+    
     logging.info(f"Initialized data loader:\n{training_utils.array_tree_to_info(batch)}")
 
     train_state, train_state_sharding = init_train_state(config, init_rng, mesh, resume=resuming)
@@ -260,6 +370,18 @@ def main(config: _config.TrainConfig):
     if resuming:
         train_state = _checkpoints.restore_state(checkpoint_manager, train_state, data_loader)
 
+    # 检查模型是否启用了对比学习
+    model = nnx.merge(train_state.model_def, train_state.params)
+    if hasattr(config.model, 'enable_contrastive_learning_cl1'):
+        print(f"\033[92m[MODEL] Contrastive learning enabled: {config.model.enable_contrastive_learning_cl1}\033[0m")
+        if config.model.enable_contrastive_learning_cl1:
+            if hasattr(model, 'contrastive_module_cl1'):
+                print("\033[92m[MODEL] contrastive_module_cl1 exists in model\033[0m")
+            else:
+                print("\033[91m[MODEL] contrastive_module_cl1 NOT found in model despite being enabled\033[0m")
+    else:
+        print("\033[91m[MODEL] enable_contrastive_learning_cl1 not found in config\033[0m")
+
     ptrain_step = jax.jit(
         functools.partial(train_step, config),
         in_shardings=(replicated_sharding, train_state_sharding, data_sharding),
@@ -267,6 +389,12 @@ def main(config: _config.TrainConfig):
         donate_argnums=(1,),
     )
 
+    # 添加累积特征的变量
+    accumulated_features = []
+    accumulated_categories = []
+    accumulation_count = 0
+    accumulation_target = 5  # 累积5个batch的数据
+    
     start_step = int(train_state.step)
     pbar = tqdm.tqdm(
         range(start_step, config.num_train_steps),
@@ -285,10 +413,57 @@ def main(config: _config.TrainConfig):
         if step % config.log_interval == 0:
             stacked_infos = common_utils.stack_forest(infos)
             reduced_info = jax.device_get(jax.tree.map(jnp.mean, stacked_infos))
-            info_str = ", ".join(f"{k}={v:.4f}" for k, v in reduced_info.items())
+            info_str = ", ".join(f"{k}={v:.4f}" for k, v in reduced_info.items() if k not in ["cl1_features", "cl1_task_categories"])
             pbar.write(f"Step {step}: {info_str}")
-            wandb.log(reduced_info, step=step)
+            wandb.log({k: v for k, v in reduced_info.items() if k not in ["cl1_features", "cl1_task_categories"]}, step=step)
             infos = []
+        
+        # 累积对比学习特征和类别
+        cl1_features = info.get("cl1_features")
+        cl1_task_categories = info.get("cl1_task_categories")
+        
+        if cl1_features is not None and cl1_task_categories is not None:
+            try:
+                # 将特征和类别从设备中获取
+                cl1_features = jax.device_get(cl1_features)
+                cl1_task_categories = jax.device_get(cl1_task_categories)
+                
+                # 检查数据是否为NaN或无穷大
+                if not (np.isnan(cl1_features).any() or np.isinf(cl1_features).any() or 
+                        np.isnan(cl1_task_categories).any() or np.isinf(cl1_task_categories).any()):
+                    accumulated_features.append(cl1_features)
+                    accumulated_categories.append(cl1_task_categories)
+                    accumulation_count += 1
+                    print(f"\033[96m[ACCUMULATE] Added batch {accumulation_count}/{accumulation_target}, "
+                          f"total samples: {sum(f.shape[0] for f in accumulated_features)}\033[0m")
+            except Exception as e:
+                print(f"\033[91m[ERROR] Failed to accumulate features: {e}\033[0m")
+        
+        # 对比学习特征可视化
+        if hasattr(config, 'cl1_tsne_interval') and step % config.cl1_tsne_interval == 0 and step > 0:
+            # 检查是否有足够的累积数据
+            if accumulated_features and accumulation_count >= accumulation_target:
+                try:
+                    # 合并累积的特征和类别
+                    combined_features = np.vstack(accumulated_features)
+                    combined_categories = np.concatenate(accumulated_categories)
+                    
+                    print(f"\033[92m[VISUALIZE] Combined {accumulation_count} batches, "
+                          f"total samples: {combined_features.shape[0]}\033[0m")
+                    
+                    # 执行t-SNE可视化
+                    tsne_visualize(combined_features, combined_categories, step)
+                    
+                    # 重置累积变量
+                    accumulated_features = []
+                    accumulated_categories = []
+                    accumulation_count = 0
+                except Exception as e:
+                    print(f"\033[91m[ERROR] Failed to visualize accumulated features: {e}\033[0m")
+            else:
+                print(f"\033[93m[WAITING] Accumulated {accumulation_count}/{accumulation_target} batches, "
+                      f"waiting for more data before visualization\033[0m")
+        
         batch = next(data_iter)
 
         if (step % config.save_interval == 0 and step > start_step) or step == config.num_train_steps - 1:

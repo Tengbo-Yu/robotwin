@@ -59,6 +59,11 @@ def infonce_loss(image_features, text_features, task_indices, temperature=0.07):
     """
     batch_size = image_features.shape[0]
 
+    # 添加调试信息
+    print("\033[95mIn infonce_loss - image_features shape:", image_features.shape, "\033[0m")
+    print("\033[95mIn infonce_loss - text_features shape:", text_features.shape, "\033[0m")
+    print("\033[95mIn infonce_loss - task_indices shape:", task_indices.shape, "\033[0m")
+
     z = jnp.concatenate([image_features, text_features], axis=-1) # [B, 2D]
     z = z / (jnp.linalg.norm(z, axis=-1, keepdims=True) + 1e-8)
     similarity_matrix = jnp.dot(z, z.T) / temperature # [B, B]
@@ -79,49 +84,13 @@ def infonce_loss(image_features, text_features, task_indices, temperature=0.07):
     loss = -jnp.log(numerator / (denominator + 1e-8) + 1e-8)
     loss = jnp.where(valid_samples, loss, 0.0)
     
-    # 返回平均损失
-    return jnp.mean(loss)
-    
-    # # 获取任务类别
-    # task_categories = jax.vmap(get_task_category)(task_indices)
-    
-    # # 计算特征相似度矩阵
-    # # 归一化特征
-    # image_features = image_features / (jnp.linalg.norm(image_features, axis=-1, keepdims=True) + 1e-8)
-    # text_features = text_features / (jnp.linalg.norm(text_features, axis=-1, keepdims=True) + 1e-8)
-    
-    # # 计算相似度矩阵 [B, B]
-    # similarity_matrix = jnp.dot(image_features, text_features.T) / temperature
-    
-    # # 创建任务类别掩码矩阵 [B, B]
-    # # 相同类别的任务为正例(True)，不同类别为负例(False)
-    # task_category_matrix = task_categories[:, None] == task_categories[None, :]
-    
-    # # 创建对角线掩码，避免自己和自己对比
-    # diagonal_mask = jnp.eye(batch_size, dtype=bool)
-    
-    # # 正例掩码：相同任务类别但不是自己
-    # positive_mask = task_category_matrix & (~diagonal_mask)
-    
-    # # 计算InfoNCE损失
-    # # 对于每个样本，计算其与所有样本的相似度
-    # exp_sim = jnp.exp(similarity_matrix)
-    
-    # # 分母：与所有样本的相似度之和（除了自己）
-    # denominator = jnp.sum(exp_sim * (~diagonal_mask), axis=1)
-    
-    # # 分子：与正例的相似度之和
-    # numerator = jnp.sum(exp_sim * positive_mask, axis=1)
-    
-    # # 避免除零，如果没有正例则损失为0
-    # valid_samples = jnp.sum(positive_mask, axis=1) > 0
-    
-    # # 计算损失
-    # loss = -jnp.log(numerator / (denominator + 1e-8) + 1e-8)
-    # loss = jnp.where(valid_samples, loss, 0.0)
-    
-    # # 返回平均损失
-    # return jnp.mean(loss)
+    # 返回平均损失、归一化特征和任务类别，用于可视化
+    print("\033[95mIn infonce_loss - z shape:", z.shape, "\033[0m")
+    print("\033[95mIn infonce_loss - task_categories shape:", task_categories.shape, "\033[0m")
+    return jnp.mean(loss), {
+        "features": z,
+        "task_categories": task_categories
+    }
 
 
 class ContrastiveLearningModule(nnx.Module):
@@ -198,22 +167,38 @@ class ContrastiveLearningModule(nnx.Module):
             temperature: 温度参数
             
         Returns:
-            对比学习损失
+            对比学习损失和可视化数据
         """
         if image_features is None or text_features is None:
-            return 0.0
+            return 0.0, {"features": None, "task_categories": None}
+        
+        # 添加调试信息
+        print("\033[95mIn compute_contrastive_loss - image_features shape:", image_features.shape, "\033[0m")
+        print("\033[95mIn compute_contrastive_loss - text_features shape:", text_features.shape, "\033[0m")
+        print("\033[95mIn compute_contrastive_loss - task_indices shape:", task_indices.shape, "\033[0m")
         
         # 投影到对比学习空间
+        # 对比学习实际上学习的是对于embedding的投影
         projected_image_features = self.image_projection(image_features)
         projected_text_features = self.text_projection(text_features)
         
+        print("\033[95mIn compute_contrastive_loss - projected_image_features shape:", projected_image_features.shape, "\033[0m")
+        print("\033[95mIn compute_contrastive_loss - projected_text_features shape:", projected_text_features.shape, "\033[0m")
+        
         # 计算InfoNCE损失
-        return infonce_loss(
+        loss, vis_data = infonce_loss(
             projected_image_features, 
             projected_text_features, 
             task_indices,
             temperature=temperature
         )
+        
+        print("\033[95mIn compute_contrastive_loss - returning features shape:", 
+              None if vis_data["features"] is None else vis_data["features"].shape, "\033[0m")
+        print("\033[95mIn compute_contrastive_loss - returning task_categories shape:", 
+              None if vis_data["task_categories"] is None else vis_data["task_categories"].shape, "\033[0m")
+        
+        return loss, vis_data
 
 
 def create_contrastive_learning_module(input_dim: int, projection_dim: int, rngs: nnx.Rngs) -> ContrastiveLearningModule:
@@ -250,7 +235,7 @@ def test_contrastive_learning():
     )
     
     # 计算对比学习损失
-    loss = cl_module.compute_contrastive_loss(
+    loss, vis_data = cl_module.compute_contrastive_loss(
         image_features, text_features, task_indices, temperature=0.07
     )
     

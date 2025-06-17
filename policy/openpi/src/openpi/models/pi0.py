@@ -322,6 +322,12 @@ class Pi0(_model.BaseModel):
         preprocess_rng, noise_rng, time_rng = jax.random.split(rng, 3)
         observation = _model.preprocess_observation(preprocess_rng, observation, train=train)
 
+        # 添加调试信息：检查task_indices
+        if task_indices is not None:
+            print("\033[94mTask indices shape in compute_loss:", task_indices.shape, "\033[0m")
+        else:
+            print("\033[94mTask indices is None in compute_loss\033[0m")
+
         batch_shape = actions.shape[:-2]
         noise = jax.random.normal(noise_rng, actions.shape) # 生成随机噪声
         time = jax.random.beta(time_rng, 1.5, 1, batch_shape) * 0.999 + 0.001
@@ -372,18 +378,33 @@ class Pi0(_model.BaseModel):
         
         # 如果启用CL1对比学习且在训练模式下，添加对比学习损失
         contrastive_loss_cl1 = 0.0
+        vis_data = {"features": None, "task_categories": None}
         if self.config.enable_contrastive_learning_cl1 and train and task_indices is not None:
             # 在此处直接提取对比学习特征
             image_features, text_features = self._extract_contrastive_features_cl1(observation)
             
+            # 添加调试信息
+            if image_features is not None and text_features is not None:
+                print("\033[94mImage features shape:", image_features.shape, "\033[0m")
+                print("\033[94mText features shape:", text_features.shape, "\033[0m")
+            else:
+                print("\033[94mImage or text features is None\033[0m")
+            
             if image_features is not None and text_features is not None:
                 # 计算CL1对比学习损失
-                contrastive_loss_cl1 = self.contrastive_module_cl1.compute_contrastive_loss(
+                contrastive_loss_cl1, vis_data = self.contrastive_module_cl1.compute_contrastive_loss(
                     image_features, 
                     text_features,
                     task_indices,
                     temperature=self.config.contrastive_temperature_cl1
                 )
+                
+                # 添加调试信息
+                if vis_data["features"] is not None:
+                    print("\033[94mVis data features shape:", vis_data["features"].shape, "\033[0m")
+                    print("\033[94mVis data task categories shape:", vis_data["task_categories"].shape, "\033[0m")
+                else:
+                    print("\033[94mVis data features is None\033[0m")
                 
                 # 将对比学习损失添加到主损失中
                 # 由于diffusion_loss的形状是[batch, action_horizon]，我们需要将contrastive_loss广播到相同形状
@@ -397,7 +418,9 @@ class Pi0(_model.BaseModel):
                 return {
                     "total_loss": total_loss,
                     "diffusion_loss": diffusion_loss,
-                    "contrastive_loss_cl1": jnp.broadcast_to(contrastive_loss_cl1, diffusion_loss.shape)
+                    "contrastive_loss_cl1": jnp.broadcast_to(contrastive_loss_cl1, diffusion_loss.shape),
+                    "cl1_features": vis_data["features"],
+                    "cl1_task_categories": vis_data["task_categories"],
                 }
         
         # 如果没有对比学习，只返回扩散损失
@@ -406,6 +429,7 @@ class Pi0(_model.BaseModel):
     def _extract_contrastive_features_cl1(self, obs: _model.Observation):
         """提取用于CL1对比学习的特征，在compute_loss方法内部调用"""
         if not hasattr(self, 'contrastive_module_cl1'):
+            print("\033[91m[ERROR] contrastive_module_cl1 not found in model\033[0m")
             return None, None
             
         # 收集图像tokens和masks
@@ -413,24 +437,39 @@ class Pi0(_model.BaseModel):
         image_masks_list = []
         
         for name in obs.images:
-            image_tokens, _ = self.PaliGemma.img(obs.images[name], train=False)
-            image_tokens_list.append(image_tokens)
-            image_masks_list.append(obs.image_masks[name])
+            try:
+                image_tokens, _ = self.PaliGemma.img(obs.images[name], train=False)
+                image_tokens_list.append(image_tokens)
+                image_masks_list.append(obs.image_masks[name])
+            except Exception as e:
+                print(f"\033[91m[ERROR] Failed to process image {name}: {e}\033[0m")
         
         # 提取图像特征
         image_features = None
         if image_tokens_list:
-            image_features = self.contrastive_module_cl1.extract_image_features(
-                image_tokens_list, image_masks_list
-            )
+            try:
+                image_features = self.contrastive_module_cl1.extract_image_features(
+                    image_tokens_list, image_masks_list
+                )
+                print(f"\033[92m[SUCCESS] Extracted image features with shape {image_features.shape}\033[0m")
+            except Exception as e:
+                print(f"\033[91m[ERROR] Failed to extract image features: {e}\033[0m")
+        else:
+            print("\033[91m[ERROR] No valid image tokens found\033[0m")
         
         # 提取文本特征
         text_features = None
         if obs.tokenized_prompt is not None:
-            text_tokens = self.PaliGemma.llm(obs.tokenized_prompt, method="embed")
-            text_features = self.contrastive_module_cl1.extract_text_features(
-                text_tokens, obs.tokenized_prompt_mask
-            )
+            try:
+                text_tokens = self.PaliGemma.llm(obs.tokenized_prompt, method="embed")
+                text_features = self.contrastive_module_cl1.extract_text_features(
+                    text_tokens, obs.tokenized_prompt_mask
+                )
+                print(f"\033[92m[SUCCESS] Extracted text features with shape {text_features.shape}\033[0m")
+            except Exception as e:
+                print(f"\033[91m[ERROR] Failed to extract text features: {e}\033[0m")
+        else:
+            print("\033[91m[ERROR] tokenized_prompt is None\033[0m")
         
         return image_features, text_features
 
