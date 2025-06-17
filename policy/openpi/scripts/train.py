@@ -389,11 +389,12 @@ def main(config: _config.TrainConfig):
         donate_argnums=(1,),
     )
 
-    # 添加累积特征的变量
+    # 添加特征收集变量
     accumulated_features = []
     accumulated_categories = []
     accumulation_count = 0
-    accumulation_target = 5  # 累积5个batch的数据
+    accumulation_target = 10  # 收集5个batch的数据
+    is_collecting = False    # 是否正在收集数据的标志
     
     start_step = int(train_state.step)
     pbar = tqdm.tqdm(
@@ -418,51 +419,59 @@ def main(config: _config.TrainConfig):
             wandb.log({k: v for k, v in reduced_info.items() if k not in ["cl1_features", "cl1_task_categories"]}, step=step)
             infos = []
         
-        # 累积对比学习特征和类别
-        cl1_features = info.get("cl1_features")
-        cl1_task_categories = info.get("cl1_task_categories")
-        
-        if cl1_features is not None and cl1_task_categories is not None:
-            try:
-                # 将特征和类别从设备中获取
-                cl1_features = jax.device_get(cl1_features)
-                cl1_task_categories = jax.device_get(cl1_task_categories)
-                
-                # 检查数据是否为NaN或无穷大
-                if not (np.isnan(cl1_features).any() or np.isinf(cl1_features).any() or 
-                        np.isnan(cl1_task_categories).any() or np.isinf(cl1_task_categories).any()):
-                    accumulated_features.append(cl1_features)
-                    accumulated_categories.append(cl1_task_categories)
-                    accumulation_count += 1
-                    print(f"\033[96m[ACCUMULATE] Added batch {accumulation_count}/{accumulation_target}, "
-                          f"total samples: {sum(f.shape[0] for f in accumulated_features)}\033[0m")
-            except Exception as e:
-                print(f"\033[91m[ERROR] Failed to accumulate features: {e}\033[0m")
-        
-        # 对比学习特征可视化
+        # 检查是否到达可视化间隔点
         if hasattr(config, 'cl1_tsne_interval') and step % config.cl1_tsne_interval == 0 and step > 0:
-            # 检查是否有足够的累积数据
-            if accumulated_features and accumulation_count >= accumulation_target:
+            # 如果当前不在收集状态，则开始收集数据
+            if not is_collecting:
+                print(f"\033[92m[COLLECT] Starting to collect data for the next {accumulation_target} batches\033[0m")
+                # 清空之前可能存在的数据
+                accumulated_features = []
+                accumulated_categories = []
+                accumulation_count = 0
+                is_collecting = True
+        
+        # 如果正在收集数据，则处理当前批次
+        if is_collecting:
+            cl1_features = info.get("cl1_features")
+            cl1_task_categories = info.get("cl1_task_categories")
+            
+            if cl1_features is not None and cl1_task_categories is not None:
                 try:
-                    # 合并累积的特征和类别
-                    combined_features = np.vstack(accumulated_features)
-                    combined_categories = np.concatenate(accumulated_categories)
+                    # 将特征和类别从设备中获取
+                    cl1_features = jax.device_get(cl1_features)
+                    cl1_task_categories = jax.device_get(cl1_task_categories)
                     
-                    print(f"\033[92m[VISUALIZE] Combined {accumulation_count} batches, "
-                          f"total samples: {combined_features.shape[0]}\033[0m")
-                    
-                    # 执行t-SNE可视化
-                    tsne_visualize(combined_features, combined_categories, step)
-                    
-                    # 重置累积变量
-                    accumulated_features = []
-                    accumulated_categories = []
-                    accumulation_count = 0
+                    # 检查数据是否为NaN或无穷大
+                    if not (np.isnan(cl1_features).any() or np.isinf(cl1_features).any() or 
+                            np.isnan(cl1_task_categories).any() or np.isinf(cl1_task_categories).any()):
+                        accumulated_features.append(cl1_features)
+                        accumulated_categories.append(cl1_task_categories)
+                        accumulation_count += 1
+                        print(f"\033[96m[COLLECT] Added batch {accumulation_count}/{accumulation_target}, "
+                              f"total samples: {sum(f.shape[0] for f in accumulated_features)}\033[0m")
+                        
+                        # 如果已收集足够的批次，进行可视化并重置收集状态
+                        if accumulation_count >= accumulation_target:
+                            try:
+                                # 合并收集的特征和类别
+                                combined_features = np.vstack(accumulated_features)
+                                combined_categories = np.concatenate(accumulated_categories)
+                                
+                                print(f"\033[92m[VISUALIZE] Combined {accumulation_count} batches, "
+                                      f"total samples: {combined_features.shape[0]}\033[0m")
+                                
+                                # 执行t-SNE可视化
+                                tsne_visualize(combined_features, combined_categories, step)
+                                
+                                # 重置收集状态
+                                is_collecting = False
+                                print("\033[92m[COLLECT] Data collection completed and visualized\033[0m")
+                            except Exception as e:
+                                print(f"\033[91m[ERROR] Failed to visualize collected features: {e}\033[0m")
+                                # 即使可视化失败，也重置收集状态以避免无限收集
+                                is_collecting = False
                 except Exception as e:
-                    print(f"\033[91m[ERROR] Failed to visualize accumulated features: {e}\033[0m")
-            else:
-                print(f"\033[93m[WAITING] Accumulated {accumulation_count}/{accumulation_target} batches, "
-                      f"waiting for more data before visualization\033[0m")
+                    print(f"\033[91m[ERROR] Failed to process batch for collection: {e}\033[0m")
         
         batch = next(data_iter)
 
