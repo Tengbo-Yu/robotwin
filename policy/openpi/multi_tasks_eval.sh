@@ -62,10 +62,11 @@ checkpoint_num="29999"
 seed="0"
 model_name="8_dual_tasks_7+7_CL1_0613"  # 单独设置model_name
 dual_arm_separate_denoise=1
-enable_contrastive_learning_cl1=1
+enable_contrastive_learning_cl1=0
 
 # 创建结果目录
-results_dir="eval_result/${model_name}_${checkpoint_num}"
+current_time=$(date +"%Y%m%d_%H%M")
+results_dir="eval_result/${model_name}_${checkpoint_num}/${current_time}"
 mkdir -p $results_dir
 summary_file="$results_dir/summary.txt"
 
